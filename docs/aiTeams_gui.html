@@ -1,0 +1,1329 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>aiTeams — Multi-Agent Workspace</title>
+  <!--
+    Mockup giao diện aiTeams (thiết kế v2):
+    - AI Team gồm 1..n AI Agent
+    - Project 1..n Workflow, Workflow 0..n Ticket
+    - Thứ tự tạo: Project -> Workflow (xuất bản) -> Ticket -> mở cửa sổ chat
+    Tham chiếu spec: docs/specs/IMPLEMENTATION_PLAN.md, PHASE_4/5/6.
+  -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background-color: #EBE9D8; color: #1C1C1A; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    .agent-pill { display: inline-flex; align-items: center; gap: 3px; background-color: #EFECE1; border: 1px solid #DFDDD0; padding: 1px 6px; border-radius: 6px; font-weight: 600; font-size: 12px; color: #2C2C2A; }
+    .side-item { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-radius: 8px; color: #44403c; font-weight: 500; transition: background .15s; }
+    .side-item:hover { background: rgba(223,221,208,.6); }
+    .side-item.active { background: #D6D4C4; color: #1c1917; font-weight: 600; }
+    .btn-dark { background: #1c1917; color: #fff; border-radius: 10px; font-size: 12px; font-weight: 500; padding: 7px 13px; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-dark:hover { background: #292524; }
+    .btn-dark:disabled { background: #a8a29e; cursor: not-allowed; }
+    .btn-light { background: #fff; border: 1px solid #d6d3d1; border-radius: 10px; font-size: 12px; font-weight: 500; padding: 6px 12px; color: #44403c; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-light:hover { background: #fafaf9; }
+    .inp { width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #d6d3d1; background: #fff; font-size: 12px; }
+    .inp:focus { outline: none; border-color: #78716c; }
+    .lbl { display: block; color: #57534e; font-weight: 500; margin-bottom: 4px; font-size: 12px; }
+    .typing span { animation: blink 1.2s infinite; }
+    .typing span:nth-child(2) { animation-delay: .2s; } .typing span:nth-child(3) { animation-delay: .4s; }
+    @keyframes blink { 0%, 80%, 100% { opacity: .2 } 40% { opacity: 1 } }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #D5D3C2; border-radius: 99px; }
+  </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex p-2.5 select-none">
+
+  <!-- ========================= SIDEBAR ========================= -->
+  <aside class="w-64 flex flex-col justify-between pr-2.5 shrink-0 text-[13px] min-h-0">
+    <div class="space-y-4 min-h-0 flex flex-col">
+      <div class="space-y-3 px-2 pt-1 shrink-0">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-1.5">
+            <span class="w-3 h-3 rounded-full bg-[#FF5F56] border border-black/10"></span>
+            <span class="w-3 h-3 rounded-full bg-[#FFBD2E] border border-black/10"></span>
+            <span class="w-3 h-3 rounded-full bg-[#27C93F] border border-black/10"></span>
+          </div>
+          <span class="text-[11px] font-mono text-stone-500 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>ACP Connected</span>
+        </div>
+      </div>
+
+      <!-- Global menu -->
+      <div class="space-y-0.5 px-1 shrink-0">
+        <button onclick="go('inbox')" id="nav-inbox" class="side-item">
+          <span class="flex items-center gap-2"><i data-lucide="bell" class="w-4 h-4 text-stone-600"></i> Thông báo</span>
+          <span id="inbox-badge" class="text-[11px] font-mono bg-stone-800 text-white px-1.5 rounded-full">0</span>
+        </button>
+        <button onclick="go('agents')" id="nav-agents" class="side-item">
+          <span class="flex items-center gap-2"><i data-lucide="bot" class="w-4 h-4 text-stone-600"></i> Agents & Teams</span>
+          <span id="agent-count" class="text-[11px] text-stone-500 font-mono">0</span>
+        </button>
+      </div>
+
+      <!-- Project -> Workflow -> Ticket tree -->
+      <div class="px-1 flex-1 min-h-0 overflow-y-auto space-y-1" id="project-tree"></div>
+    </div>
+
+    <div class="px-2.5 py-2 rounded-xl hover:bg-[#DFDDD0]/60 transition flex items-center gap-2.5 cursor-pointer shrink-0 mt-2">
+      <div class="relative shrink-0">
+        <div class="w-8 h-8 rounded-full bg-stone-800 text-white flex items-center justify-center font-semibold text-xs">NH</div>
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#EBE9D8] absolute -bottom-0.5 -right-0.5"></span>
+      </div>
+      <div class="truncate">
+        <div class="text-xs font-semibold text-stone-900 truncate">Nguyen Manh Hung</div>
+        <div id="user-path" class="text-[10px] font-mono text-stone-500 truncate"></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ========================= MAIN PANEL ========================= -->
+  <main class="flex-1 bg-white rounded-2xl border border-stone-300/80 shadow-sm flex flex-col overflow-hidden min-w-0">
+
+    <!-- VIEW: CHAT (ticket) -->
+    <div id="view-chat" class="flex-1 hidden flex-col overflow-hidden">
+      <header class="border-b border-stone-200 px-5 py-2 shrink-0">
+        <div id="chat-breadcrumb" class="text-[11px] text-stone-400 flex items-center gap-1"></div>
+        <div class="flex items-center justify-between mt-0.5">
+          <div class="flex items-center gap-2 min-w-0">
+            <span id="chat-title" class="font-bold text-sm text-stone-900 truncate"></span>
+            <span class="text-xs text-stone-400">•</span>
+            <span id="chat-path" class="text-xs font-mono text-stone-500 bg-stone-100 px-2 py-0.5 rounded truncate"></span>
+            <span id="chat-status"></span>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <div class="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-stone-200 text-xs text-stone-600">
+              <i data-lucide="users" class="w-3.5 h-3.5"></i><span id="member-count">0</span>
+            </div>
+            <button onclick="openCurrentWorkflow()" title="Xem workflow của ticket" class="p-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50">
+              <i data-lucide="git-merge" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div id="messages-stream" class="flex-1 overflow-y-auto px-6 py-4 space-y-5 select-text text-[13.5px] leading-relaxed"></div>
+
+      <div class="px-5 pt-2 pb-1 shrink-0">
+        <div id="clarify-hint" class="hidden mb-2 px-3 py-2 rounded-lg border border-amber-200 bg-amber-50 text-xs text-amber-900"></div>
+        <div id="composer" class="border border-stone-300 rounded-xl bg-white p-3 focus-within:border-stone-500 transition shadow-sm"
+             ondragover="event.preventDefault();this.classList.add('ring-2','ring-stone-400')" ondragleave="this.classList.remove('ring-2','ring-stone-400')"
+             ondrop="event.preventDefault();this.classList.remove('ring-2','ring-stone-400');addFiles(event.dataTransfer.files)">
+          <div id="attach-list" class="hidden flex-wrap gap-2 mb-2.5"></div>
+          <input id="chat-input" type="text" onkeydown="if(event.key==='Enter') sendChatMessage()" onpaste="if(event.clipboardData.files.length){event.preventDefault();addFiles(event.clipboardData.files)}"
+                 class="w-full text-sm text-stone-900 placeholder-stone-400 focus:outline-none bg-transparent" />
+          <div class="flex items-center justify-between mt-2.5 pt-1">
+            <div class="flex items-center gap-1.5">
+              <div id="mention-bar" class="flex items-center gap-1 text-stone-500 flex-wrap"></div>
+              <button onclick="$('attach-input').click()" title="Đính kèm file (hoặc kéo thả / dán)" class="w-7 h-7 rounded-lg text-stone-500 hover:text-stone-900 hover:bg-stone-100 flex items-center justify-center shrink-0"><i data-lucide="paperclip" class="w-4 h-4"></i></button>
+              <input id="attach-input" type="file" multiple class="hidden" onchange="addFiles(this.files);this.value=''">
+            </div>
+            <button onclick="sendChatMessage()" class="w-7 h-7 rounded-full bg-stone-400 hover:bg-stone-900 text-white flex items-center justify-center transition shrink-0">
+              <i data-lucide="arrow-up" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+        <div class="h-7 flex items-center justify-between px-1 text-[11px] text-stone-600 font-medium">
+          <div class="flex items-center gap-1.5 min-w-0"><span>🐝</span><span id="footer-status" class="truncate"></span></div>
+          <span class="font-mono text-[10px] text-stone-400 shrink-0">claude-agent-acp • codex-acp</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: PROJECT OVERVIEW (danh sách workflow) -->
+    <div id="view-project" class="flex-1 hidden flex-col overflow-y-auto p-6 space-y-6"></div>
+
+    <!-- VIEW: WORKFLOW DETAIL (pipeline + tickets) -->
+    <div id="view-workflow" class="flex-1 hidden flex-col overflow-y-auto p-6 space-y-6"></div>
+
+    <!-- VIEW: AGENTS -->
+    <div id="view-agents" class="flex-1 hidden flex-col overflow-y-auto p-6 space-y-8"><div id="agents-sec" class="space-y-6"></div><div id="teams-sec" class="space-y-6"></div></div>
+
+
+    <!-- VIEW: INBOX -->
+    <div id="view-inbox" class="flex-1 hidden flex-col overflow-y-auto p-6 space-y-6"></div>
+  </main>
+
+  <!-- ========================= MODAL ========================= -->
+  <div id="modal" class="fixed inset-0 bg-stone-900/30 backdrop-blur-[2px] hidden items-center justify-center z-50 p-4" onclick="if(event.target===this) closeModal()">
+    <div id="modal-box" class="bg-white rounded-2xl border border-stone-300 shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-5 text-xs"></div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 hidden bg-stone-900 text-white text-xs px-4 py-2 rounded-xl shadow-lg z-[60]"></div>
+
+<script>
+/* ================================================================
+   DATA
+================================================================ */
+const MODELS = {
+  "claude-code": ["sonnet", "opus", "haiku"],
+  "codex": ["gpt-5-codex", "gpt-5"],
+  "openai-api": ["gpt-5", "gpt-5-mini", "gpt-4.1"]   // gợi ý; cho nhập tự do (model của máy chủ tương thích OpenAI)
+};
+const RUNTIME_LABEL = { "claude-code": "Claude Code", "codex": "Codex", "openai-api": "OpenAI Custom" };
+const ROLE_META = {
+  BA:        { color: "amber",   perm: "Read-only",    desc: "Làm rõ lỗi với người dùng, viết kịch bản tái tạo lỗi (STR)." },
+  DEVELOPER: { color: "sky",     perm: "Read / Write", desc: "Sửa mã nguồn trong workspace, không được commit." },
+  TESTER:    { color: "emerald", perm: "Run Test",     desc: "Kiểm thử theo STR, báo Đạt / Chưa đạt." },
+  LEADER:    { color: "purple",  perm: "Git Push",     desc: "Review diff, commit & push sau khi người dùng xác nhận." },
+  SECURITY:  { color: "rose",    perm: "Read-only",    desc: "Review bảo mật trên các file vừa sửa." },
+  CUSTOM:    { color: "stone",   perm: "Tuỳ chỉnh",    desc: "" }
+};
+const AVATAR = {
+  amber: "bg-amber-100 border-amber-300 text-amber-800", sky: "bg-sky-100 border-sky-300 text-sky-800",
+  emerald: "bg-emerald-100 border-emerald-300 text-emerald-800", purple: "bg-purple-100 border-purple-300 text-purple-800",
+  rose: "bg-rose-100 border-rose-300 text-rose-800", stone: "bg-stone-100 border-stone-300 text-stone-700"
+};
+const STATUS = {
+  OPEN: ["Mới", "bg-stone-100 text-stone-600"],
+  RUNNING: ["Đang chạy", "bg-sky-100 text-sky-700"],
+  WAITING_USER_INPUT: ["Chờ trả lời", "bg-amber-100 text-amber-800"],
+  WAITING_USER_CONFIRM: ["Chờ duyệt", "bg-stone-700/15 text-stone-700"],
+  COMPLETED: ["Đã xong", "bg-emerald-100 text-emerald-700"],
+  FAILED: ["Lỗi", "bg-rose-100 text-rose-700"]
+};
+
+const state = {
+  agents: [
+    { id: "a_ba", handle: "ba", name: "Business Analyst", role: "BA", runtime: "claude-code", model: "sonnet", icon: "🐝", builtin: true, desc: ROLE_META.BA.desc },
+    { id: "a_dev", handle: "developer", name: "Frontend Developer", role: "DEVELOPER", runtime: "claude-code", model: "opus", icon: "🛠️", builtin: true, desc: ROLE_META.DEVELOPER.desc },
+    { id: "a_test", handle: "tester", name: "QA Tester", role: "TESTER", runtime: "codex", model: "gpt-5-codex", icon: "🧪", builtin: true, desc: ROLE_META.TESTER.desc },
+    { id: "a_lead", handle: "leader", name: "Tech Lead (Git Release)", role: "LEADER", runtime: "claude-code", model: "opus", icon: "🚀", builtin: true, desc: ROLE_META.LEADER.desc },
+    { id: "a_sec", handle: "security_checker", name: "Security Reviewer", role: "SECURITY", runtime: "codex", model: "gpt-5", icon: "🛡️", builtin: false, desc: "Rà soát SQL Injection, XSS, lộ secret trên các file vừa sửa." }
+  ],
+  teams: [
+    { id: "t_core", icon: "🐝", name: "Core Bugfix Squad", desc: "Đội fix bug chuẩn: BA → Dev → Tester → Leader", agentIds: ["a_ba", "a_dev", "a_test", "a_lead"] },
+    { id: "t_sec", icon: "🛡️", name: "Security Review", desc: "Review bảo mật trước khi nghiệm thu", agentIds: ["a_sec"] }
+  ],
+  projects: [
+    {
+      id: "p_hnbg", open: true, lastActivity: Date.now(), name: "HNBG_DEV", label: "HNBG_DEV (VETC)", path: "D:\\VETC\\FE\\HNBG_DEV", branch: "hotfix/reconciliation",
+      teamIds: ["t_core", "t_sec"], agentIds: [], nextNumber: 105,
+      workflows: [
+        { id: "w_bug", name: "Fix Bug", prefix: "BUG", desc: "Chu trình fix bug 4 agent + Git release", steps: tpl("bugfix"), publishedSteps: tpl("bugfix"), version: 3, publishedVersion: 3, dirty: false, open: true },
+        { id: "w_sec", name: "Fix Bug + Security", prefix: "SEC", desc: "Thêm bước review bảo mật trước khi test", steps: tpl("security"), publishedSteps: tpl("security"), version: 1, publishedVersion: 1, dirty: false, open: true },
+        { id: "w_feat", name: "Làm tính năng", prefix: "FEAT", desc: "Đang thiết kế", steps: [{ type: "agent", agentId: "a_ba" }, { type: "agent", agentId: "a_dev" }], publishedSteps: null, version: 1, publishedVersion: null, dirty: true, open: true }
+      ]
+    }  ,
+    { id: "p_portal", open: false, lastActivity: Date.now() - 3600e3, name: "VETC_PORTAL", label: "VETC_PORTAL", path: "D:\\VETC\\FE\\VETC_PORTAL", branch: "develop", teamIds: ["t_core"], agentIds: [], nextNumber: 1, workflows: [] },
+    { id: "p_mobile", open: false, lastActivity: Date.now() - 86400e3, name: "ETC_MOBILE", label: "ETC_MOBILE", path: "D:\\VETC\\MOBILE\\ETC_MOBILE", branch: "main", teamIds: ["t_core"], agentIds: [], nextNumber: 1, workflows: [] }
+  ],
+  tickets: [],
+  notifications: [], notifTab: "open",
+  cur: { view: "chat", projectId: "p_hnbg", workflowId: "w_bug", ticketId: null }
+};
+
+function tpl(name) {
+  if (name === "bugfix") return [{ type: "agent", agentId: "a_ba" }, { type: "agent", agentId: "a_dev" }, { type: "agent", agentId: "a_test" }, { type: "gate" }, { type: "agent", agentId: "a_lead" }];
+  if (name === "security") return [{ type: "agent", agentId: "a_ba" }, { type: "agent", agentId: "a_dev" }, { type: "agent", agentId: "a_sec" }, { type: "agent", agentId: "a_test" }, { type: "gate" }, { type: "agent", agentId: "a_lead" }];
+  return [];
+}
+
+/* ================================================================
+   HELPERS
+================================================================ */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const agent = id => state.agents.find(a => a.id === id);
+const project = id => state.projects.find(p => p.id === (id || state.cur.projectId));
+const workflow = (wid, p) => (p || project()).workflows.find(w => w.id === wid);
+const ticket = id => state.tickets.find(t => t.id === id);
+const roleColor = a => (ROLE_META[a.role] || ROLE_META.CUSTOM).color;
+const now = () => new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+const slugify = s => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D")
+  .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+const statusBadge = st => `<span class="text-[10px] font-mono px-1.5 py-0.5 rounded ${STATUS[st][1]}">${STATUS[st][0]}</span>`;
+const pill = h => `<span class="agent-pill"><i data-lucide="bot" class="w-3 h-3"></i> ${esc(h)}</span>`;
+const icons = () => lucide.createIcons();
+
+function effectiveAgents(p) {
+  const ids = new Set(p.agentIds);
+  p.teamIds.forEach(tid => state.teams.find(t => t.id === tid)?.agentIds.forEach(a => ids.add(a)));
+  return state.agents.filter(a => ids.has(a.id));
+}
+function wfStatus(w) {
+  if (w.publishedVersion == null) return ["Nháp", "bg-stone-100 text-stone-500"];
+  if (w.dirty) return [`v${w.publishedVersion} · có thay đổi chưa xuất bản`, "bg-amber-50 text-amber-700"];
+  return [`Đã xuất bản v${w.publishedVersion}`, "bg-emerald-50 text-emerald-700"];
+}
+function validateSteps(steps) {
+  const errs = [];
+  if (!steps.some(s => s.type === "agent")) errs.push("Workflow cần ít nhất 1 bước agent.");
+  if (steps[0]?.type === "gate") errs.push("Bước “Người dùng xác nhận” phải đứng sau một agent.");
+  steps.forEach((s, i) => {
+    if (s.type === "agent" && agent(s.agentId)?.role === "LEADER" && !steps.slice(0, i).some(x => x.type === "gate"))
+      errs.push("@leader (Git Release) phải đứng sau bước “Người dùng xác nhận”.");
+  });
+  return errs;
+}
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.remove("hidden");
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.add("hidden"), 2600);
+}
+
+/* ================================================================
+   NAVIGATION & SIDEBAR
+================================================================ */
+function go(view, opts = {}) {
+  Object.assign(state.cur, { view }, opts);
+  ["chat", "project", "workflow", "agents", "inbox"].forEach(v => {
+    const el = $(`view-${v}`); el.classList.toggle("hidden", v !== view); el.classList.toggle("flex", v === view);
+  });
+  ({ chat: renderChat, project: renderProject, workflow: renderWorkflow, agents: () => { renderAgents(); renderTeams(); }, inbox: renderInbox })[view]();
+  renderSidebar();
+}
+
+function renderSidebar() {
+  const p = project(), c = state.cur;
+  ["inbox", "agents"].forEach(v => $(`nav-${v}`).classList.toggle("active", c.view === v));
+  $("agent-count").textContent = state.agents.length + " · " + state.teams.length;
+  const nOpen = state.notifications.filter(n => !n.resolvedAt).length; $("inbox-badge").textContent = nOpen; $("inbox-badge").classList.toggle("hidden", !nOpen);
+  $("user-path").textContent = p ? p.path : "";
+
+  const recent = [...state.projects].sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0));
+  let shown = recent.slice(0, 5);
+  if (p && !shown.includes(p)) shown[4] = p;           // project đang mở luôn hiện, không đổi thứ tự các project còn lại
+  let h = `
+    <div class="px-2.5 pt-1 pb-1 flex items-center justify-between text-[11px] font-semibold text-stone-500">
+      <span>Projects</span>
+      <button onclick="openCreateProject()" title="Tạo project mới (bước 1)" class="hover:text-stone-900"><i data-lucide="folder-plus" class="w-3.5 h-3.5"></i></button>
+    </div>`;
+  shown.forEach(x => {
+    const isActive = x.id === p?.id;
+    h += `<div>
+      <div class="side-item !py-1 ${isActive && c.view === "project" ? "active" : ""}">
+        <button onclick="openProject('${x.id}')" title="${esc(x.path)}" class="flex-1 flex items-center gap-2 min-w-0 text-left">
+          <i data-lucide="${x.open ? "folder-open" : "folder"}" class="w-4 h-4 ${isActive ? "text-stone-800" : "text-stone-500"} shrink-0"></i>
+          <span class="truncate ${isActive ? "font-semibold" : ""}">${esc(x.label)}</span>
+        </button>
+        ${state.tickets.some(t => t.projectId === x.id && t.status.startsWith("WAITING")) ? `<span class="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mr-1.5"></span>` : ""}
+        <button onclick="toggleProject('${x.id}')" title="${x.open ? "Thu gọn" : "Mở rộng"}" class="p-0.5 rounded text-stone-400 hover:text-stone-900 hover:bg-stone-300/50 shrink-0">
+          <i data-lucide="${x.open ? "chevron-down" : "chevron-right"}" class="w-3.5 h-3.5"></i></button>
+      </div>`;
+    if (x.open) h += `<div class="ml-3 pl-1.5 border-l border-stone-300/70 space-y-0">${workflowTree(x, c)}</div>`;
+    h += `</div>`;
+  });
+  if (recent.length > 5) h += `<button onclick="openAllProjects()" class="side-item !py-1 text-stone-500 text-xs"><span>Xem tất cả (${recent.length})</span></button>`;
+  $("project-tree").innerHTML = h;
+  icons();
+}
+function workflowTree(p, c) {
+  let h = "";
+  if (!p.workflows.length) {
+    h += `<div class="mx-1 mt-1 p-2.5 rounded-lg border border-dashed border-stone-400/60 text-[11px] text-stone-500">
+            Chưa có workflow.<br><button onclick="openCreateWorkflow('${p.id}')" class="mt-1 font-semibold text-stone-800 underline">+ Tạo workflow đầu tiên</button></div>`;
+  }
+  p.workflows.forEach(w => {
+    const pub = w.publishedVersion != null;
+    const isCur = (c.view === "workflow" && c.workflowId === w.id);
+    const tks = state.tickets.filter(t => t.workflowId === w.id).sort((a, b) => b.number - a.number);
+    h += `
+      <div class="pt-0.5">
+        <div class="side-item !py-1 ${isCur ? "active" : ""}">
+          <button onclick="toggleWf('${w.id}')" class="text-stone-400 hover:text-stone-800"><i data-lucide="${w.open ? "chevron-down" : "chevron-right"}" class="w-3 h-3"></i></button>
+          <button onclick="go('workflow',{workflowId:'${w.id}'})" class="flex-1 flex items-center gap-1.5 min-w-0 text-left ml-1">
+            <i data-lucide="git-merge" class="w-3.5 h-3.5 ${pub ? "text-stone-600" : "text-stone-400"} shrink-0"></i>
+            <span class="truncate text-xs ${pub ? "" : "text-stone-400"}">${esc(w.name)}</span>
+            <span class="text-[9px] font-mono text-stone-400">${w.prefix}${pub ? "" : " · nháp"}</span>
+          </button>
+          ${pub ? `<button onclick="openCreateTicket('${w.id}')" title="Tạo ticket trong workflow này" class="text-stone-400 hover:text-stone-900"><i data-lucide="plus" class="w-3.5 h-3.5"></i></button>` : ""}
+        </div>
+        ${w.open ? tks.map(t => `
+          <button onclick="openTicket('${t.id}')" class="side-item !py-1 pl-6 ${c.view === "chat" && c.ticketId === t.id ? "active" : ""}">
+            <span class="truncate text-xs"># ${esc(t.slug)}</span>
+            ${t.status === "COMPLETED" ? `<span class="w-1.5 h-1.5 rounded-full bg-stone-400 shrink-0"></span>` : `<span class="text-[9px] font-mono px-1 py-0.5 rounded ${STATUS[t.status][1]} shrink-0">${STATUS[t.status][0]}</span>`}
+          </button>`).join("") : ""}
+        ${w.open && !tks.length && pub ? `<div class="pl-7 py-0.5 text-[11px] text-stone-400">Chưa có ticket</div>` : ""}
+      </div>`;
+  });
+  if (p.workflows.length) h += `<button onclick="openCreateWorkflow('${p.id}')" class="side-item !py-1 text-stone-500 text-xs"><span class="flex items-center gap-2"><i data-lucide="plus" class="w-3.5 h-3.5"></i> Thêm workflow</span></button>`;
+  return h;
+}
+function openAllProjects() {
+  openModal(`<div class="flex items-center justify-between mb-3"><span class="text-sm font-bold text-stone-900">Tất cả project</span><button onclick="closeModal()" class="text-stone-400 hover:text-stone-900"><i data-lucide="x" class="w-4 h-4"></i></button></div>
+    <div class="space-y-1.5">${[...state.projects].sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0)).map(x => `
+      <button onclick="closeModal();openProject('${x.id}')" class="w-full text-left p-2.5 rounded-lg border border-stone-200 hover:bg-stone-50">
+        <div class="font-semibold text-stone-900">${esc(x.label)}</div><div class="font-mono text-[11px] text-stone-500 truncate">${esc(x.path)}</div></button>`).join("")}</div>`);
+}
+function openProject(id) { project(id).open = true; go('project', { projectId: id }); }
+function toggleProject(id) { const x = project(id); x.open = !x.open; renderSidebar(); }
+function toggleWf(wid) { const w = workflow(wid); w.open = !w.open; renderSidebar(); }
+
+/* ================================================================
+   PROJECT OVERVIEW
+================================================================ */
+function renderProject() {
+  const p = project();
+  const eff = effectiveAgents(p);
+  let h = `
+    <div class="flex items-start justify-between border-b border-stone-200 pb-4">
+      <div>
+        <div class="text-[11px] text-stone-400">Project</div>
+        <h2 class="text-base font-bold text-stone-900">🛠️ ${esc(p.label)}</h2>
+        <p class="text-xs text-stone-500 mt-1 flex items-center gap-2">
+          <code class="font-mono bg-stone-100 px-1.5 py-0.5 rounded">${esc(p.path)}</code>
+          <span class="font-mono flex items-center gap-1"><i data-lucide="git-branch" class="w-3 h-3"></i>${esc(p.branch)}</span>
+        </p>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn-light" onclick="openMembers()"><i data-lucide="user-plus" class="w-3.5 h-3.5"></i> Thành viên & AI Team</button>
+        <button class="btn-dark" onclick="openCreateWorkflow()"><i data-lucide="plus" class="w-3.5 h-3.5"></i> Tạo workflow</button>
+      </div>
+    </div>
+
+    ${steps3(p)}
+
+    <div>
+      <div class="text-xs font-bold text-stone-700 mb-2">AI Team & Agent trong project</div>
+      <div class="flex flex-wrap gap-2">
+        ${p.teamIds.map(tid => { const t = state.teams.find(x => x.id === tid); return `<span class="px-2.5 py-1 rounded-lg bg-[#F7F6EE] border border-[#DFDDD0] text-[11px]"><b>${esc(t.name)}</b> · ${t.agentIds.map(id => "@" + agent(id).handle).join(", ")}</span>`; }).join("")}
+        ${p.agentIds.map(id => `<span class="px-2.5 py-1 rounded-lg bg-white border border-stone-200 text-[11px]">${logo(agent(id))} @${agent(id).handle}</span>`).join("")}
+        ${!eff.length ? `<span class="text-[11px] text-rose-600">Chưa có agent nào — hãy thêm AI Team trước khi tạo workflow.</span>` : ""}
+      </div>
+    </div>
+
+    <div>
+      <div class="text-xs font-bold text-stone-700 mb-2">Workflows (${p.workflows.length})</div>`;
+  if (!p.workflows.length) {
+    h += `<div class="p-8 rounded-2xl border border-dashed border-stone-300 text-center">
+            <i data-lucide="git-merge" class="w-6 h-6 mx-auto text-stone-400"></i>
+            <div class="text-sm font-semibold text-stone-800 mt-2">Project chưa có workflow</div>
+            <p class="text-xs text-stone-500 mt-1">Tạo workflow để bắt đầu nhận ticket. Ticket luôn được tạo bên trong một workflow.</p>
+            <button class="btn-dark mt-4" onclick="openCreateWorkflow()"><i data-lucide="plus" class="w-3.5 h-3.5"></i> Tạo workflow đầu tiên</button>
+          </div>`;
+  } else {
+    h += `<div class="grid grid-cols-1 lg:grid-cols-2 gap-3.5">` + p.workflows.map(w => {
+      const [lbl, cls] = wfStatus(w);
+      const tks = state.tickets.filter(t => t.workflowId === w.id);
+      const cnt = st => tks.filter(t => st.includes(t.status)).length;
+      return `
+        <div class="p-4 rounded-xl border border-stone-200 bg-stone-50/40 space-y-3">
+          <div class="flex items-start justify-between">
+            <div>
+              <div class="font-bold text-sm text-stone-900 flex items-center gap-2">${esc(w.name)} <span class="text-[10px] font-mono bg-stone-200/70 px-1.5 py-0.5 rounded">${w.prefix}</span></div>
+              <div class="text-[11px] text-stone-500 mt-0.5">${esc(w.desc || "")}</div>
+            </div>
+            <span class="text-[10px] px-1.5 py-0.5 rounded ${cls} whitespace-nowrap">${lbl}</span>
+          </div>
+          <div class="text-[11px] font-mono text-stone-600 flex flex-wrap items-center gap-1">${miniPipeline(w.steps)}</div>
+          <div class="flex items-center justify-between pt-2 border-t border-stone-200/70">
+            <span class="text-[11px] text-stone-500">${tks.length} ticket · ${cnt(["RUNNING", "WAITING_USER_INPUT", "WAITING_USER_CONFIRM"])} đang xử lý · ${cnt(["COMPLETED"])} xong</span>
+            <div class="flex gap-1.5">
+              <button class="btn-light !py-1" onclick="go('workflow',{workflowId:'${w.id}'})">Mở</button>
+              <button class="btn-dark !py-1" ${w.publishedVersion == null ? "disabled title='Xuất bản workflow trước'" : ""} onclick="openCreateTicket('${w.id}')"><i data-lucide="plus" class="w-3 h-3"></i> Ticket</button>
+            </div>
+          </div>
+        </div>`;
+    }).join("") + `</div>`;
+  }
+  h += `</div>`;
+  $("view-project").innerHTML = h;
+  icons();
+}
+function steps3(p) {
+  const hasWf = p.workflows.length > 0;
+  const hasPub = p.workflows.some(w => w.publishedVersion != null);
+  const hasTk = state.tickets.some(t => t.projectId === p.id);
+  const s = (n, txt, done, active) => `
+    <div class="flex items-center gap-2 ${done ? "text-stone-800" : active ? "text-stone-900 font-semibold" : "text-stone-400"}">
+      <span class="w-5 h-5 rounded-full text-[10px] flex items-center justify-center ${done ? "bg-emerald-600 text-white" : active ? "bg-stone-900 text-white" : "bg-stone-200"}">${done ? "✓" : n}</span>${txt}</div>`;
+  return `<div class="flex items-center gap-3 text-xs p-3 rounded-xl bg-[#F7F6EE] border border-[#DFDDD0]">
+    ${s(1, "Project", true)}<i data-lucide="chevron-right" class="w-3 h-3 text-stone-400"></i>
+    ${s(2, "Workflow (xuất bản)", hasPub, !hasPub)}<i data-lucide="chevron-right" class="w-3 h-3 text-stone-400"></i>
+    ${s(3, "Ticket", hasTk, hasPub && !hasTk)}<i data-lucide="chevron-right" class="w-3 h-3 text-stone-400"></i>
+    ${s(4, "Cửa sổ chat", hasTk, false)}
+  </div>`;
+}
+function miniPipeline(steps) {
+  if (!steps.length) return `<span class="text-stone-400">(trống)</span>`;
+  return steps.map(s => s.type === "gate" ? `<span class="px-1.5 py-0.5 rounded bg-stone-900 text-white">✋ xác nhận</span>` : `<span class="px-1.5 py-0.5 rounded bg-white border border-stone-200">@${agent(s.agentId).handle}</span>`)
+    .join(`<span class="text-stone-400">→</span>`);
+}
+
+/* ================================================================
+   WORKFLOW DETAIL (pipeline editor + tickets)
+================================================================ */
+function renderWorkflow() {
+  const p = project(), w = workflow(state.cur.workflowId);
+  if (!w) return go("project");
+  const [lbl, cls] = wfStatus(w);
+  const errs = validateSteps(w.steps);
+  const tks = state.tickets.filter(t => t.workflowId === w.id).sort((a, b) => b.number - a.number);
+  const eff = effectiveAgents(p);
+  let h = `
+    <div class="flex items-start justify-between border-b border-stone-200 pb-4">
+      <div>
+        <div class="text-[11px] text-stone-400"><a class="hover:underline cursor-pointer" onclick="go('project')">${esc(p.name)}</a> / Workflow</div>
+        <h2 class="text-base font-bold text-stone-900 flex items-center gap-2">${esc(w.name)}
+          <span class="text-[10px] font-mono bg-stone-200/70 px-1.5 py-0.5 rounded">${w.prefix}</span>
+          <span class="text-[10px] font-normal px-1.5 py-0.5 rounded ${cls}">${lbl}</span></h2>
+        <p class="text-xs text-stone-500 mt-1">Thư mục áp dụng: <code class="font-mono bg-stone-100 px-1.5 py-0.5 rounded">${esc(p.path)}</code> — chỉ <b>@leader</b> được commit & push, sau khi người dùng xác nhận.</p>
+      </div>
+      <div class="flex gap-2 shrink-0">
+        <button class="btn-light" onclick="publishWorkflow('${w.id}')" ${(!w.dirty || errs.length) ? "disabled style='opacity:.5;cursor:not-allowed'" : ""}><i data-lucide="upload" class="w-3.5 h-3.5"></i> Xuất bản v${w.version}</button>
+        <button class="btn-dark" ${w.publishedVersion == null ? "disabled title='Xuất bản workflow trước khi tạo ticket'" : ""} onclick="openCreateTicket('${w.id}')"><i data-lucide="plus" class="w-3.5 h-3.5"></i> Tạo ticket</button>
+      </div>
+    </div>`;
+
+  if (w.publishedVersion == null) {
+    h += `<div class="px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900">Workflow đang ở trạng thái <b>Nháp</b>. Thiết kế các bước bên dưới rồi bấm <b>Xuất bản</b> để có thể tạo ticket.</div>`;
+  } else if (w.dirty) {
+    h += `<div class="px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900">Có thay đổi chưa xuất bản. Ticket mới vẫn dùng <b>v${w.publishedVersion}</b>; ticket đang chạy giữ nguyên phiên bản của nó.</div>`;
+  }
+
+  h += `<div class="grid grid-cols-1 xl:grid-cols-5 gap-6">
+    <div class="xl:col-span-3 space-y-3">
+      <div class="flex items-center justify-between">
+        <div class="text-xs font-bold text-stone-700">Luồng xử lý (bản nháp v${w.version})</div>
+        <span class="text-[11px] text-stone-400">Canvas kéo thả đầy đủ: Phase 5</span>
+      </div>`;
+  w.steps.forEach((s, i) => {
+    if (s.type === "gate") {
+      h += `<div class="p-3.5 rounded-xl border-2 border-dashed border-stone-400 bg-[#F7F6EE] flex items-center justify-between">
+              <div class="flex items-center gap-3"><span class="w-6 h-6 rounded-full bg-stone-900 text-white text-xs flex items-center justify-center font-bold">${i + 1}</span>
+              <div><div class="text-xs font-bold text-stone-900">✋ Người dùng xác nhận (Human Gate)</div><div class="text-[11px] text-stone-500">Dừng chờ người dùng bấm Xác nhận / Chưa đạt.</div></div></div>
+              ${stepCtl(w, i)}</div>`;
+    } else {
+      const a = agent(s.agentId), m = ROLE_META[a.role] || ROLE_META.CUSTOM;
+      const lead = a.role === "LEADER";
+      h += `<div class="p-3.5 rounded-xl ${lead ? "border-2 border-stone-900 bg-[#F7F6EE]" : "border border-stone-200 bg-stone-50/60"} flex items-center justify-between">
+              <div class="flex items-center gap-3 min-w-0"><span class="w-6 h-6 rounded-full bg-stone-900 text-white text-xs flex items-center justify-center font-bold shrink-0">${i + 1}</span>
+              <div class="min-w-0"><div class="text-xs font-bold text-stone-900">${logo(a)} @${esc(a.handle)} — ${esc(a.name)}</div><div class="text-[11px] text-stone-500 truncate">${esc(a.desc || m.desc)}</div></div></div>
+              <div class="flex items-center gap-2 shrink-0"><span class="text-[11px] font-mono ${lead ? "bg-stone-900 text-white" : "bg-white border border-stone-200"} px-2 py-0.5 rounded">${m.perm}</span>${stepCtl(w, i)}</div></div>`;
+    }
+  });
+  if (!w.steps.length) h += `<div class="p-6 rounded-xl border border-dashed border-stone-300 text-center text-xs text-stone-500">Workflow trống — thêm bước đầu tiên bên dưới.</div>`;
+  h += `
+      <div class="flex items-center gap-2 pt-1">
+        <select id="add-step" class="inp !w-auto">
+          ${eff.map(a => `<option value="${a.id}">${logo(a)} @${esc(a.handle)}</option>`).join("")}
+          <option value="gate">✋ Người dùng xác nhận</option>
+        </select>
+        <button class="btn-light" onclick="addStep('${w.id}')"><i data-lucide="plus" class="w-3.5 h-3.5"></i> Thêm bước</button>
+        ${!eff.length ? `<span class="text-[11px] text-rose-600">Project chưa có agent.</span>` : ""}
+      </div>
+      ${errs.length ? `<div class="p-3 rounded-lg bg-rose-50 border border-rose-200 text-[11px] text-rose-700 space-y-0.5">${errs.map(e => "• " + esc(e)).join("<br>")}</div>` : `<div class="text-[11px] text-emerald-700">✔ Luồng hợp lệ</div>`}
+    </div>
+
+    <div class="xl:col-span-2 space-y-3">
+      <div class="text-xs font-bold text-stone-700">Tickets trong workflow (${tks.length})</div>
+      ${tks.length ? tks.map(t => `
+        <button onclick="openTicket('${t.id}')" class="w-full text-left p-3 rounded-xl border border-stone-200 hover:bg-stone-50 space-y-1">
+          <div class="flex items-center justify-between"><span class="text-[11px] font-mono text-stone-500">#${w.prefix}-${t.number} · v${t.version}</span>${statusBadge(t.status)}</div>
+          <div class="text-xs font-medium text-stone-900 line-clamp-2">${esc(t.title)}</div>
+          <div class="text-[11px] font-mono text-stone-400"># ${esc(t.slug)}</div>
+        </button>`).join("") : `<div class="p-5 rounded-xl border border-dashed border-stone-300 text-center text-[11px] text-stone-500">${w.publishedVersion == null ? "Xuất bản workflow để tạo ticket." : "Chưa có ticket. Bấm “Tạo ticket” — cửa sổ chat sẽ mở ngay."}</div>`}
+    </div>
+  </div>`;
+  $("view-workflow").innerHTML = h;
+  icons();
+}
+function stepCtl(w, i) {
+  return `<div class="flex items-center text-stone-400">
+    <button onclick="moveStep('${w.id}',${i},-1)" class="p-0.5 hover:text-stone-900" title="Lên"><i data-lucide="arrow-up" class="w-3.5 h-3.5"></i></button>
+    <button onclick="moveStep('${w.id}',${i},1)" class="p-0.5 hover:text-stone-900" title="Xuống"><i data-lucide="arrow-down" class="w-3.5 h-3.5"></i></button>
+    <button onclick="removeStep('${w.id}',${i})" class="p-0.5 hover:text-rose-600" title="Xoá"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`;
+}
+function touch(w) { if (!w.dirty) { w.dirty = true; if (w.publishedVersion != null) w.version++; } }
+function addStep(wid) { const w = workflow(wid), v = $("add-step").value; touch(w); w.steps.push(v === "gate" ? { type: "gate" } : { type: "agent", agentId: v }); renderWorkflow(); renderSidebar(); }
+function removeStep(wid, i) { const w = workflow(wid); touch(w); w.steps.splice(i, 1); renderWorkflow(); renderSidebar(); }
+function moveStep(wid, i, d) { const w = workflow(wid), j = i + d; if (j < 0 || j >= w.steps.length) return; touch(w); [w.steps[i], w.steps[j]] = [w.steps[j], w.steps[i]]; renderWorkflow(); }
+function publishWorkflow(wid) {
+  const w = workflow(wid);
+  if (validateSteps(w.steps).length) return toast("Workflow chưa hợp lệ");
+  const first = w.publishedVersion == null;
+  w.publishedSteps = JSON.parse(JSON.stringify(w.steps));
+  w.publishedVersion = w.version; w.dirty = false;
+  toast(`Đã xuất bản ${w.name} v${w.version}`);
+  renderWorkflow(); renderSidebar();
+  if (first) setTimeout(() => openCreateTicket(w.id, true), 400);
+}
+
+/* ================================================================
+   AGENTS
+================================================================ */
+function renderAgents() {
+  $("agents-sec").innerHTML = `
+    <div class="flex items-center justify-between border-b border-stone-200 pb-4">
+      <div><h2 class="text-base font-bold text-stone-900">Agents</h2>
+      <p class="text-xs text-stone-500 mt-0.5">Ngoài 4 agent mặc định, bạn có thể tạo thêm agent nối với Claude Code hoặc Codex, rồi gom vào AI Team.</p></div>
+      <button onclick="openAgentForm()" class="btn-dark"><i data-lucide="plus" class="w-4 h-4"></i> Tạo Agent</button>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+      ${state.agents.map(a => {
+        const teams = state.teams.filter(t => t.agentIds.includes(a.id)).map(t => t.name);
+        return `<div class="p-4 rounded-xl border border-stone-200 bg-stone-50/40 flex flex-col justify-between space-y-3">
+          <div>
+            <div class="flex items-center justify-between gap-2">
+              <span class="font-bold text-sm text-stone-900 truncate">${logo(a)} @${esc(a.handle)} — ${esc(a.name)}</span>
+              <div class="flex items-center gap-1 shrink-0">
+                ${a.restarting ? `<span class="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded animate-pulse">↻ Đang khởi động lại…</span>` : ""}
+                <button onclick="openAgentForm('${a.id}')" title="Sửa agent" class="text-stone-400 hover:text-stone-900"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+                ${a.builtin ? `<span class="text-[10px] bg-stone-900 text-white px-1.5 py-0.5 rounded">Mặc định</span>` : `<button onclick="deleteAgent('${a.id}')" class="text-stone-400 hover:text-rose-600"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>`}
+                <span class="text-[11px] font-mono ${a.runtime === "openai-api" ? "bg-sky-100 text-sky-800" : "bg-stone-200/70 text-stone-700"} px-2 py-0.5 rounded">${a.runtime}</span>
+              </div>
+            </div>
+            <p class="text-xs text-stone-600 mt-1.5 leading-relaxed">${esc(a.desc)}</p>
+          </div>
+          <div class="text-[11px] font-mono text-stone-400 pt-2 border-t border-stone-200/70 flex justify-between gap-2">
+            <span class="truncate">Model: ${esc(a.model)}${a.baseUrl ? " · " + esc(new URL(a.baseUrl).host) : ""} · ${(ROLE_META[a.role] || ROLE_META.CUSTOM).perm}</span>
+            <span class="truncate">${teams.length ? "Team: " + esc(teams.join(", ")) : "Chưa thuộc team"}</span>
+          </div></div>`;
+      }).join("")}
+    </div>`;
+  icons();
+}
+
+/* ---- Logo picker (emoji hoặc ảnh tải lên) ---- */
+const LOGOS = ["🤖","🐝","🛠️","🧪","🚀","🛡️","🦾","🧠","🔍","📝","🧑‍💻","👾","🦉","🦊","🐙","🐞","⚙️","🔒","📊","🎯","⚡","🌟","🧩","🏗️"];
+const logo = x => (x && x.icon && x.icon.startsWith("data:")) ? `<img src="${x.icon}" class="w-4 h-4 rounded object-cover inline-block align-[-3px]">` : ((x && x.icon) || "🤖");
+function logoPicker(pf, cur) {
+  return `<div><label class="lbl">Logo</label>
+    <input type="hidden" id="${pf}-icon" value="${esc(cur)}">
+    <div class="flex items-center gap-3">
+      <div id="${pf}-logo-prev" class="w-12 h-12 rounded-xl border border-stone-200 bg-white flex items-center justify-center text-2xl shrink-0">${logo({ icon: cur })}</div>
+      <div class="flex-1">
+        <div class="flex flex-wrap gap-1">${LOGOS.map(e => `<button type="button" onclick="pickLogo('${pf}','${e}')" class="w-7 h-7 rounded-md hover:bg-stone-200/70 text-base leading-none">${e}</button>`).join("")}</div>
+        <label class="inline-flex items-center gap-1 mt-1.5 text-[11px] text-stone-600 cursor-pointer hover:text-stone-900"><i data-lucide="upload" class="w-3 h-3"></i> Tải ảnh lên<input type="file" accept="image/*" class="hidden" onchange="uploadLogo('${pf}', this)"></label>
+      </div></div></div>`;
+}
+function pickLogo(pf, v) { $(pf + "-icon").value = v; $(pf + "-logo-prev").innerHTML = logo({ icon: v }); }
+function uploadLogo(pf, input) {
+  const file = input.files[0]; if (!file) return;
+  if (file.size > 300 * 1024) return toast("Ảnh tối đa 300KB");
+  const r = new FileReader(); r.onload = () => { $(pf + "-icon").value = r.result; $(pf + "-logo-prev").innerHTML = `<img src="${r.result}" class="w-full h-full rounded-xl object-cover">`; }; r.readAsDataURL(file);
+}
+
+function openAgentForm(aid) {
+  const e = aid ? agent(aid) : null;
+  const v = (k, d = "") => esc(e ? (e[k] ?? d) : d);
+  const inTeam = t => e && t.agentIds.includes(e.id);
+  const running = e ? state.tickets.filter(t => t.status === "RUNNING" || t.status.startsWith("WAITING")).filter(t => t.steps.some(s => s.agentId === e.id)) : [];
+  openModal(`
+    <div class="flex items-center justify-between mb-4"><span class="text-sm font-bold text-stone-900">${e ? "Sửa AI Agent @" + esc(e.handle) : "Tạo AI Agent mới"}</span><button onclick="closeModal()" class="text-stone-400 hover:text-stone-900"><i data-lucide="x" class="w-4 h-4"></i></button></div>
+    ${e ? `<div class="mb-3 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
+      <b>↻ Lưu thay đổi sẽ khởi động lại agent.</b> Tiến trình ACP hiện tại bị đóng và một session mới được tạo với cấu hình mới.${running.length ? ` Hiện có <b>${running.length} ticket</b> đang dùng @${esc(e.handle)}; lượt đang chạy sẽ bị dừng và chạy lại từ đầu bước đó.` : ""}</div>` : ""}
+    <div class="mb-3">${logoPicker("f", e ? e.icon : "🤖")}</div>
+    <div class="grid grid-cols-2 gap-3">
+      <div><label class="lbl">1. Tên Agent (Handle)</label><input id="f-name" class="inp font-mono ${e ? "bg-stone-100 text-stone-500" : ""}" ${e ? "disabled" : ""} value="${e ? "@" + v("handle") : ""}" placeholder="@security_review" /></div>
+      <div><label class="lbl">2. Vai trò</label><input id="f-role" class="inp" value="${v("name")}" placeholder="Kiểm tra bảo mật & hiệu năng" /></div>
+      <div><label class="lbl">3. Loại Agent (ACP)</label>
+        <select id="f-runtime" class="inp" onchange="syncModels()"><option value="claude-code" ${e && e.runtime === "claude-code" ? "selected" : ""}>Claude Code (claude-agent-acp)</option><option value="codex" ${e && e.runtime === "codex" ? "selected" : ""}>OpenAI Codex (codex-acp)</option><option value="openai-api" ${e && e.runtime === "openai-api" ? "selected" : ""}>OpenAI Custom (OpenAI-compatible · custom URL)</option></select></div>
+      <div id="f-model-acp"><label class="lbl">4. Model</label><select id="f-model" class="inp font-mono"></select></div>
+      <div id="api-fields" class="col-span-2 hidden p-3 rounded-xl border border-sky-200 bg-sky-50/60 space-y-3">
+        <div class="text-[11px] text-sky-900 leading-relaxed"><b>Agent gọi OpenAI Custom</b> qua endpoint tương thích OpenAI (<span class="font-mono">/chat/completions</span>) với <b>URL tuỳ chỉnh</b> (OpenAI, Azure, OpenRouter, LiteLLM, Ollama, vLLM…). Agent loại này <b>chỉ trả lời văn bản</b>: không tự đọc/sửa file hay chạy lệnh trong workspace — hợp với vai trò BA, review, tóm tắt, giải thích.</div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="col-span-2"><label class="lbl">Base URL</label><input id="f-baseurl" class="inp font-mono" value="${v("baseUrl")}" placeholder="https://api.openai.com/v1" /></div>
+          <div><label class="lbl">API Key</label><input id="f-apikey" type="password" autocomplete="off" class="inp font-mono" placeholder="${e && e.hasKey ? "•••••••• (để trống = giữ nguyên)" : "sk-..."}" /></div>
+          <div><label class="lbl">Model</label><input id="f-apimodel" list="api-models" class="inp font-mono" value="${e && e.runtime === "openai-api" ? v("model") : ""}" placeholder="gpt-5" /><datalist id="api-models">${MODELS["openai-api"].map(m => `<option value="${m}">`).join("")}</datalist></div>
+        </div>
+        <div class="flex items-center gap-2"><button type="button" class="btn-light !py-1" onclick="testApiConnection()"><i data-lucide="plug-zap" class="w-3.5 h-3.5"></i> Kiểm tra kết nối</button><span id="api-test" class="text-[11px] text-stone-500"></span></div>
+        <div class="text-[10px] text-stone-500">API key được lưu mã hoá phía máy chủ và không bao giờ hiển thị lại.</div>
+      </div>
+      <div class="col-span-2"><label class="lbl">5. Nhóm quyền</label>
+        <select id="f-group" class="inp">${[["SECURITY", "Chỉ đọc (Review)"], ["DEVELOPER", "Đọc / Ghi (không commit)"], ["TESTER", "Đọc + Chạy test"], ["CUSTOM", "Tuỳ chỉnh"]].map(([k, l]) => `<option value="${k}" ${e && e.role === k ? "selected" : ""}>${l}</option>`).join("")}${e && !["SECURITY", "DEVELOPER", "TESTER", "CUSTOM"].includes(e.role) ? `<option value="${e.role}" selected>${esc((ROLE_META[e.role] || ROLE_META.CUSTOM).perm)}</option>` : ""}</select></div>
+    </div>
+    <div class="mt-3"><label class="lbl">6. Mô tả chi tiết vai trò (System Prompt)</label>
+      <textarea id="f-prompt" rows="4" class="inp" placeholder="Nhập hướng dẫn chi tiết cách Agent làm việc trên thư mục dự án...">${v("desc")}</textarea></div>
+    <div class="mt-3"><label class="lbl">7. AI Team (tuỳ chọn)</label>
+      <div class="flex flex-wrap gap-3">${state.teams.map(t => `<label class="flex items-center gap-1.5"><input type="checkbox" class="f-team accent-stone-900" value="${t.id}" ${inTeam(t) ? "checked" : ""}> ${esc(t.name)}</label>`).join("")}</div></div>
+    <div class="flex justify-end gap-2 mt-5"><button class="btn-light" onclick="closeModal()">Huỷ</button><button class="btn-dark" onclick="saveAgent('${aid || ""}')">${e ? "Lưu & khởi động lại" : "Lưu Agent"}</button></div>`);
+  syncModels(e && e.model);
+}
+function syncModels(cur) {
+  const rt = $("f-runtime").value, api = rt === "openai-api";
+  $("api-fields").classList.toggle("hidden", !api); $("f-model-acp").classList.toggle("hidden", api);
+  if (!api) { const list = MODELS[rt].includes(cur) || !cur ? MODELS[rt] : [cur, ...MODELS[rt]]; $("f-model").innerHTML = list.map(m => `<option ${m === cur ? "selected" : ""}>${m}</option>`).join(""); }
+  // Agent API không có công cụ workspace → chỉ cho nhóm quyền không ghi/chạy lệnh
+  [...$("f-group").options].forEach(o => { o.disabled = api && ["DEVELOPER", "TESTER", "LEADER"].includes(o.value); });
+  if (api && $("f-group").selectedOptions[0]?.disabled) $("f-group").value = "SECURITY";
+}
+function testApiConnection() {
+  const url = $("f-baseurl").value.trim(), out = $("api-test");
+  if (!/^https?:\/\/[^\s/]+/i.test(url)) { out.className = "text-[11px] text-rose-600"; return out.textContent = "✘ Base URL không hợp lệ (cần http:// hoặc https://)"; }
+  out.className = "text-[11px] text-stone-500"; out.textContent = "Đang kiểm tra…";
+  setTimeout(() => { out.className = "text-[11px] text-emerald-700"; out.textContent = `✔ Kết nối được ${new URL(url).host} · GET /models 200 · ${120 + Math.floor(Math.random() * 200)} ms`; }, 700);
+}
+const apiModel = () => $("f-runtime").value === "openai-api" ? $("f-apimodel").value.trim() : $("f-model").value;
+function saveAgent(aid) {
+  const name = $("f-role").value.trim(), desc = $("f-prompt").value.trim();
+  if (!name || !desc) return toast("Vui lòng điền vai trò và mô tả");
+  const picked = [...document.querySelectorAll(".f-team:checked")].map(c => c.value);
+  const rt = $("f-runtime").value, api = rt === "openai-api";
+  const extra = api ? { baseUrl: $("f-baseurl").value.trim().replace(/\/+$/, ""), hasKey: true } : { baseUrl: undefined, hasKey: undefined };
+  if (api) {
+    if (!/^https?:\/\/[^\s/]+/i.test(extra.baseUrl)) return toast("Base URL không hợp lệ (cần http:// hoặc https://)");
+    if (!apiModel()) return toast("Nhập tên model cho agent OpenAI Custom");
+    if (["DEVELOPER", "TESTER", "LEADER"].includes($("f-group").value)) return toast("Agent API không sửa file/chạy lệnh — chọn nhóm quyền Chỉ đọc hoặc Tuỳ chỉnh");
+    if (!aid && !$("f-apikey").value.trim()) return toast("Nhập API key");
+  }
+  if (aid) {
+    const a = agent(aid);
+    const emptied = state.teams.find(t => t.agentIds.includes(aid) && !picked.includes(t.id) && t.agentIds.length === 1);
+    if (emptied) return toast(`Không bỏ được: @${a.handle} là agent duy nhất của team “${emptied.name}”`);
+    const next = { name, desc, runtime: rt, model: apiModel(), role: $("f-group").value, icon: $("f-icon").value || a.icon, baseUrl: extra.baseUrl, hasKey: api ? true : undefined };
+    const keyChanged = api && !!$("f-apikey").value.trim();
+    const changed = keyChanged || Object.keys(next).some(k => a[k] !== next[k]);
+    Object.assign(a, next);
+    state.teams.forEach(t => { const has = t.agentIds.includes(aid), want = picked.includes(t.id); if (has && !want) t.agentIds = t.agentIds.filter(x => x !== aid); if (!has && want) t.agentIds.push(aid); });
+    closeModal();
+    if (!changed) { go("agents"); return toast("Không có thay đổi cấu hình agent, không cần khởi động lại"); }
+    restartAgent(aid);
+    return;
+  }
+  const handle = $("f-name").value.trim().replace(/^@/, "").toLowerCase();
+  if (!/^[a-z0-9_\-]{2,49}$/.test(handle)) return toast("Handle không hợp lệ (a-z, 0-9, _ -)");
+  if (state.agents.some(a => a.handle === handle)) return toast("Handle đã tồn tại");
+  const id = "a_" + handle;
+  state.agents.push({ id, handle, name, role: $("f-group").value, runtime: rt, model: apiModel(), icon: $("f-icon").value || "🤖", builtin: false, desc, ...(api ? { baseUrl: extra.baseUrl, hasKey: true } : {}) });
+  picked.forEach(tid => state.teams.find(t => t.id === tid).agentIds.push(id));
+  closeModal(); go("agents"); toast(`Đã tạo @${handle}`);
+}
+function restartAgent(id) {
+  const a = agent(id); a.restarting = true;
+  if (state.cur.view === "agents") go("agents");
+  toast(`↻ Đang khởi động lại @${a.handle} với cấu hình mới...`);
+  setTimeout(() => {
+    a.restarting = false; a.restartedAt = Date.now();
+    if (state.cur.view === "agents") go("agents");
+    toast(`✔ @${a.handle} đã khởi động lại (${a.runtime} · ${a.model})`);
+  }, 1800);
+}
+function deleteAgent(id) {
+  const solo = state.teams.find(t => t.agentIds.length === 1 && t.agentIds[0] === id);
+  if (solo) return toast(`Không xoá được: @${agent(id).handle} là agent duy nhất của team “${solo.name}”`);
+  const used = state.projects.flatMap(p => p.workflows).find(w => w.steps.some(s => s.agentId === id));
+  if (used) return toast(`Không xoá được: đang dùng trong workflow “${used.name}”`);
+  state.teams.forEach(t => t.agentIds = t.agentIds.filter(x => x !== id));
+  state.agents = state.agents.filter(a => a.id !== id);
+  go("agents");
+}
+
+/* ================================================================
+   AI TEAMS (≥ 1 agent)
+================================================================ */
+function renderTeams() {
+  $("teams-sec").innerHTML = `
+    <div class="flex items-center justify-between border-b border-stone-200 pb-4">
+      <div><h2 class="text-base font-bold text-stone-900">Agent teams</h2>
+      <p class="text-xs text-stone-500 mt-0.5">Mỗi AI Team gồm <b>một hoặc nhiều</b> AI Agent. Thêm AI Team vào project để dùng các agent trong workflow.</p></div>
+      <button onclick="openTeamForm()" class="btn-dark"><i data-lucide="plus" class="w-4 h-4"></i> Tạo AI Team</button>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+      ${state.teams.map(t => `
+        <div class="p-4 rounded-xl border border-stone-200 bg-stone-50/40 space-y-3">
+          <div class="flex items-start justify-between">
+            <div class="flex items-start gap-2.5"><div class="w-9 h-9 rounded-xl border border-stone-200 bg-white flex items-center justify-center text-lg shrink-0 overflow-hidden">${logo(t)}</div><div><div class="font-bold text-sm text-stone-900">${esc(t.name)}</div><div class="text-[11px] text-stone-500 mt-0.5">${esc(t.desc)}</div></div></div>
+            <button class="btn-light !py-1" onclick="openTeamForm('${t.id}')">Sửa</button>
+          </div>
+          <div class="flex flex-wrap gap-1.5">${t.agentIds.map(id => { const a = agent(id); return `<span class="flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] ${AVATAR[roleColor(a)]}">${logo(a)} @${esc(a.handle)}</span>`; }).join("")}</div>
+          <div class="text-[11px] text-stone-400 pt-2 border-t border-stone-200/70">${t.agentIds.length} agent · dùng trong ${state.projects.filter(p => p.teamIds.includes(t.id)).length} project</div>
+        </div>`).join("")}
+    </div>`;
+  icons();
+}
+function openTeamForm(tid) {
+  const t = tid ? state.teams.find(x => x.id === tid) : { name: "", desc: "", agentIds: [], icon: "👥" };
+  openModal(`
+    <div class="flex items-center justify-between mb-4"><span class="text-sm font-bold text-stone-900">${tid ? "Sửa" : "Tạo"} AI Team</span><button onclick="closeModal()" class="text-stone-400 hover:text-stone-900"><i data-lucide="x" class="w-4 h-4"></i></button></div>
+    <div class="space-y-3">
+      ${logoPicker("t", t.icon || "👥")}
+      <div><label class="lbl">Tên team</label><input id="t-name" class="inp" value="${esc(t.name)}" placeholder="VD: Core Bugfix Squad"></div>
+      <div><label class="lbl">Mô tả</label><input id="t-desc" class="inp" value="${esc(t.desc)}"></div>
+      <div><label class="lbl">Agent trong team <span class="text-rose-600">* tối thiểu 1</span></label>
+        <div class="grid grid-cols-2 gap-1.5">${state.agents.map(a => `
+          <label class="flex items-center gap-2 p-2 rounded-lg border border-stone-200 hover:bg-stone-50 cursor-pointer">
+            <input type="checkbox" class="t-ag accent-stone-900" value="${a.id}" ${t.agentIds.includes(a.id) ? "checked" : ""} onchange="teamCheck()">
+            <span>${logo(a)} @${esc(a.handle)}</span></label>`).join("")}</div>
+        <div id="t-err" class="text-[11px] text-rose-600 mt-1.5 hidden">AI Team phải có ít nhất 1 agent.</div>
+      </div>
+    </div>
+    <div class="flex justify-end gap-2 mt-5"><button class="btn-light" onclick="closeModal()">Huỷ</button><button id="t-save" class="btn-dark" onclick="saveTeam('${tid || ""}')">Lưu AI Team</button></div>`);
+  teamCheck();
+}
+function teamCheck() { const n = document.querySelectorAll(".t-ag:checked").length; $("t-save").disabled = n === 0; $("t-err").classList.toggle("hidden", n > 0); }
+function saveTeam(tid) {
+  const name = $("t-name").value.trim(), ids = [...document.querySelectorAll(".t-ag:checked")].map(c => c.value);
+  if (!name) return toast("Nhập tên team");
+  if (!ids.length) return toast("AI Team phải có ít nhất 1 agent");
+  if (tid) Object.assign(state.teams.find(t => t.id === tid), { name, desc: $("t-desc").value, agentIds: ids, icon: $("t-icon").value || "👥" });
+  else state.teams.push({ id: "t_" + Date.now(), name, desc: $("t-desc").value, agentIds: ids, icon: $("t-icon").value || "👥" });
+  closeModal(); go("agents");
+}
+
+/* ================================================================
+   CREATE FLOW: PROJECT -> WORKFLOW -> TICKET -> CHAT
+================================================================ */
+function stepHeader(n, title) {
+  return `<div class="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-stone-400 mb-1">
+    ${["Project", "Workflow", "Ticket", "Chat"].map((x, i) => `<span class="${i + 1 === n ? "text-stone-900" : ""}">${i + 1}. ${x}</span>`).join(`<span>›</span>`)}</div>
+    <div class="flex items-center justify-between mb-4"><span class="text-sm font-bold text-stone-900">${title}</span><button onclick="closeModal()" class="text-stone-400 hover:text-stone-900"><i data-lucide="x" class="w-4 h-4"></i></button></div>`;
+}
+
+function openCreateProject() {
+  openModal(`<div class="flex items-center justify-between mb-4"><span class="text-sm font-bold text-stone-900">Tạo Project</span><button onclick="closeModal()" class="text-stone-400 hover:text-stone-900"><i data-lucide="x" class="w-4 h-4"></i></button></div>
+    <div class="space-y-3">
+      <div><label class="lbl">Tên project</label><input id="p-name" class="inp" placeholder="VD: HNBG_ADMIN"></div>
+      <div><label class="lbl">Đường dẫn thư mục local (ACP Working Directory)</label><input id="p-path" class="inp font-mono" placeholder="D:\\VETC\\FE\\HNBG_ADMIN" oninput="$('p-check').classList.toggle('hidden', !this.value)">
+        <div id="p-check" class="hidden mt-1.5 text-[11px] text-emerald-700 space-x-3"><span>✔ Thư mục tồn tại</span><span>✔ Git repo</span><span class="text-amber-700">⚠ 2 file đang thay đổi</span></div></div>
+      <div><label class="lbl">Nhánh Git để @leader push</label><input id="p-branch" class="inp font-mono" value="develop"></div>
+    </div>
+    <div class="flex justify-end gap-2 mt-5"><button class="btn-light" onclick="closeModal()">Huỷ</button><button class="btn-dark" onclick="saveProject()">Tạo project</button></div>`);
+}
+function saveProject() {
+  const name = $("p-name").value.trim(), path = $("p-path").value.trim();
+  if (!name || !path) return toast("Nhập tên và đường dẫn project");
+  const id = "p_" + Date.now();
+  state.projects.push({ id, name, label: name, path, branch: $("p-branch").value.trim() || "main", teamIds: [], agentIds: [], nextNumber: 1, workflows: [], open: true, lastActivity: Date.now() });
+  closeModal(); go("project", { projectId: id });
+  toast("Đã tạo project trống. Thêm AI Team, workflow và ticket sau.");
+}
+
+function openCreateWorkflow(pid) {
+  if (pid) state.cur.projectId = pid;
+  const p = project();
+  openModal(`${stepHeader(2, `Tạo Workflow trong ${esc(p.name)}`)}
+    <div class="space-y-3">
+      <div class="grid grid-cols-3 gap-3">
+        <div class="col-span-2"><label class="lbl">Tên workflow</label><input id="w-name" class="inp" placeholder="VD: Fix Bug" oninput="$('w-prefix').value=suggestPrefix(this.value)"></div>
+        <div><label class="lbl">Prefix ticket</label><input id="w-prefix" class="inp font-mono uppercase" placeholder="BUG" maxlength="10"></div>
+      </div>
+      <div><label class="lbl">Mô tả</label><input id="w-desc" class="inp" placeholder="Quy trình áp dụng cho loại công việc nào"></div>
+      <div><label class="lbl">Bắt đầu từ</label>
+        <div class="grid grid-cols-1 gap-1.5">
+          ${[["bugfix", "Mẫu Fix Bug mặc định", "@ba → @developer → @tester → ✋ xác nhận → @leader"],
+             ["security", "Mẫu Fix Bug + Security Review", "thêm @security_checker trước @tester"],
+             ["blank", "Trống", "tự thiết kế từng bước"]]
+            .map(([v, t, d], i) => `<label class="flex items-start gap-2 p-2.5 rounded-lg border border-stone-200 hover:bg-stone-50 cursor-pointer">
+              <input type="radio" name="w-tpl" value="${v}" ${i === 0 ? "checked" : ""} class="mt-0.5 accent-stone-900"><span><b>${t}</b><br><span class="text-stone-500 font-mono text-[11px]">${d}</span></span></label>`).join("")}
+        </div></div>
+      ${!effectiveAgents(p).length ? `<div class="text-[11px] text-rose-600">Project chưa có agent — hãy thêm AI Team ở “Thành viên & AI Team”.</div>` : ""}
+    </div>
+    <div class="flex justify-end gap-2 mt-5"><button class="btn-light" onclick="closeModal()">Để sau</button><button class="btn-dark" onclick="saveWorkflow()">Tạo workflow <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i></button></div>`);
+}
+function suggestPrefix(n) {
+  const s = slugify(n).split("-").filter(Boolean);
+  if (!s.length) return "";
+  return (s.length === 1 ? s[0].slice(0, 4) : s.includes("bug") ? "bug" : s.map(x => x[0]).join("").slice(0, 5)).toUpperCase();
+}
+function saveWorkflow() {
+  const p = project(), name = $("w-name").value.trim(), prefix = $("w-prefix").value.trim().toUpperCase();
+  if (!name) return toast("Nhập tên workflow");
+  if (!/^[A-Z]{2,10}$/.test(prefix)) return toast("Prefix gồm 2–10 chữ cái in hoa");
+  if (p.workflows.some(w => w.prefix === prefix)) return toast(`Prefix ${prefix} đã được dùng trong project`);
+  if (p.workflows.some(w => w.name === name)) return toast("Tên workflow đã tồn tại");
+  const eff = effectiveAgents(p).map(a => a.id);
+  const steps = tpl(document.querySelector("input[name=w-tpl]:checked").value).filter(s => s.type === "gate" || eff.includes(s.agentId));
+  const w = { id: "w_" + Date.now(), name, prefix, desc: $("w-desc").value, steps, publishedSteps: null, version: 1, publishedVersion: null, dirty: true, open: true };
+  p.workflows.push(w);
+  closeModal(); go("workflow", { workflowId: w.id });
+  toast("Workflow ở trạng thái Nháp — kiểm tra luồng rồi bấm Xuất bản");
+}
+
+function openCreateTicket(wid, afterPublish) {
+  const w = workflow(wid);
+  if (w.publishedVersion == null) return toast("Xuất bản workflow trước khi tạo ticket");
+  openModal(`${stepHeader(3, afterPublish ? "Workflow đã sẵn sàng — tạo ticket đầu tiên?" : "Tạo Ticket")}
+    <div class="p-2.5 rounded-lg bg-[#F7F6EE] border border-[#DFDDD0] mb-3 flex items-center justify-between">
+      <span>Workflow: <b>${esc(w.name)}</b> <span class="font-mono text-stone-500">(${w.prefix}) · v${w.publishedVersion}</span></span>
+      <span class="font-mono text-[11px] text-stone-500">#${w.prefix}-${project().nextNumber}</span>
+    </div>
+    <div class="space-y-3">
+      <div><label class="lbl">Tiêu đề</label><input id="k-title" class="inp" placeholder="VD: Nút Xuất Excel bị đơ khi chọn khoảng ngày lớn" oninput="$('k-slug').textContent='# '+ticketSlug('${w.prefix}', this.value)">
+        <div id="k-slug" class="mt-1 text-[11px] font-mono text-stone-400"></div></div>
+      <div><label class="lbl">Mô tả lỗi / yêu cầu</label><textarea id="k-desc" rows="4" class="inp" placeholder="Mô tả hiện tượng, màn hình, dữ liệu... (có thể dán ảnh chụp)"></textarea></div>
+    </div>
+    <div class="flex justify-between items-center mt-5">
+      <span class="text-[11px] text-stone-400">Sau khi tạo, cửa sổ chat mở ngay và workflow tự chạy.</span>
+      <div class="flex gap-2"><button class="btn-light" onclick="closeModal()">Huỷ</button><button class="btn-dark" onclick="saveTicket('${wid}')"><i data-lucide="message-square-plus" class="w-3.5 h-3.5"></i> Tạo & mở chat</button></div>
+    </div>`);
+  setTimeout(() => $("k-title")?.focus(), 50);
+}
+function ticketSlug(prefix, title) { return (prefix.toLowerCase() + "-" + slugify(title)).slice(0, 40).replace(/-$/, ""); }
+function saveTicket(wid) {
+  const p = project(), w = workflow(wid);
+  const title = $("k-title").value.trim(), desc = $("k-desc").value.trim();
+  if (!title) return toast("Nhập tiêu đề ticket");
+  p.lastActivity = Date.now();
+  const t = {
+    id: "k_" + Date.now(), projectId: p.id, workflowId: w.id, number: p.nextNumber++, version: w.publishedVersion,
+    steps: JSON.parse(JSON.stringify(w.publishedSteps)), stepIndex: 0, slug: ticketSlug(w.prefix, title), title,
+    status: "RUNNING", waiting: null, baAsked: false, footer: "", log: [], messages: []
+  };
+  t.messages.push({ kind: "user", time: now(), html: `${pill(agent(t.steps.find(s => s.type === "agent").agentId).handle)} <b>${esc(title)}</b>${desc ? "<br>" + esc(desc) : ""}` });
+  t.messages.push({ kind: "divider", text: `Workflow ${w.name} v${t.version} bắt đầu` });
+  state.tickets.push(t);
+  closeModal();
+  openTicket(t.id);           // bước 4: mở cửa sổ chat ngay
+  setTimeout(() => runStep(t), 700);
+}
+
+/* ================================================================
+   MEMBERS
+================================================================ */
+function openMembers() {
+  const p = project();
+  openModal(`
+    <div class="flex items-center justify-between mb-4"><span class="text-sm font-bold text-stone-900">Thành viên & AI Team — ${esc(p.name)}</span><button onclick="closeModal()" class="text-stone-400 hover:text-stone-900"><i data-lucide="x" class="w-4 h-4"></i></button></div>
+    <div class="space-y-4">
+      <div><div class="lbl">Người dùng</div><div class="flex items-center gap-2 p-2 rounded-lg border border-stone-200"><span class="w-6 h-6 rounded-full bg-stone-800 text-white text-[10px] flex items-center justify-center">NH</span> Nguyen Manh Hung <span class="ml-auto text-[11px] text-stone-500">MAINTAINER</span></div></div>
+      <div><div class="lbl">AI Teams</div>${state.teams.map(t => `<label class="flex items-center gap-2 p-2 rounded-lg border border-stone-200 mb-1.5"><input type="checkbox" class="m-team accent-stone-900" value="${t.id}" ${p.teamIds.includes(t.id) ? "checked" : ""}> <b>${esc(t.name)}</b> <span class="text-stone-500 truncate">${t.agentIds.map(id => "@" + agent(id).handle).join(", ")}</span></label>`).join("")}</div>
+      <div><div class="lbl">Agent lẻ</div><div class="flex flex-wrap gap-3">${state.agents.map(a => `<label class="flex items-center gap-1.5"><input type="checkbox" class="m-agent accent-stone-900" value="${a.id}" ${p.agentIds.includes(a.id) ? "checked" : ""}> ${logo(a)} @${esc(a.handle)}</label>`).join("")}</div></div>
+    </div>
+    <div class="flex justify-end gap-2 mt-5"><button class="btn-light" onclick="closeModal()">Huỷ</button><button class="btn-dark" onclick="saveMembers()">Lưu</button></div>`);
+}
+function saveMembers() {
+  const p = project();
+  p.teamIds = [...document.querySelectorAll(".m-team:checked")].map(c => c.value);
+  p.agentIds = [...document.querySelectorAll(".m-agent:checked")].map(c => c.value);
+  closeModal(); go(state.cur.view);
+}
+
+/* ================================================================
+   INBOX
+================================================================ */
+/* ---- Thông báo: lưu các sự kiện cần người dùng tương tác ---- */
+const NOTIF_TYPE = {
+  confirm: { icon: "check-circle-2", cls: "bg-amber-100 text-amber-700", label: "Cần xác nhận" },
+  input: { icon: "message-circle-question", cls: "bg-sky-100 text-sky-700", label: "Cần trả lời" }
+};
+function notify(t, type, title, body) {
+  const p = project(t.projectId), w = workflow(t.workflowId, p);
+  state.notifications.unshift({ id: "n_" + Date.now() + Math.random().toString(36).slice(2, 5), ticketId: t.id, type, title, body, at: Date.now(), read: false, resolvedAt: null, outcome: null });
+  renderSidebar();
+}
+function resolveNotif(t, outcome) {
+  state.notifications.filter(n => n.ticketId === t.id && !n.resolvedAt).forEach(n => { n.resolvedAt = Date.now(); n.outcome = outcome; n.read = true; });
+  renderSidebar();
+}
+function fmtAt(ts) {
+  const d = new Date(ts), diff = Date.now() - ts;
+  if (diff < 60e3) return "Vừa xong";
+  if (diff < 3600e3) return Math.floor(diff / 60e3) + " phút trước";
+  if (diff < 86400e3) return Math.floor(diff / 3600e3) + " giờ trước";
+  return d.toLocaleDateString("vi-VN") + " " + d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+}
+function setNotifTab(v) { state.notifTab = v; renderInbox(); icons(); }
+function openNotif(id) { const n = state.notifications.find(x => x.id === id); n.read = true; openTicket(n.ticketId); }
+function markAllRead() { state.notifications.forEach(n => n.read = true); renderInbox(); renderSidebar(); icons(); }
+function renderInbox() {
+  const open = state.notifications.filter(n => !n.resolvedAt), done = state.notifications.filter(n => n.resolvedAt);
+  const list = state.notifTab === "open" ? open : done;
+  const tab = (k, label, n) => `<button onclick="setNotifTab('${k}')" class="px-3 py-1.5 rounded-lg text-xs font-medium ${state.notifTab === k ? "bg-stone-900 text-white" : "text-stone-600 hover:bg-stone-100"}">${label} <span class="font-mono opacity-70">${n}</span></button>`;
+  $("view-inbox").innerHTML = `
+    <div class="flex items-center justify-between border-b border-stone-200 pb-4">
+      <div><h2 class="text-base font-bold text-stone-900">Thông báo</h2><p class="text-xs text-stone-500 mt-0.5">Các việc cần bạn tương tác: xác nhận kết quả, trả lời câu hỏi của agent. Thông báo được lưu lại sau khi xử lý.</p></div>
+      <button onclick="markAllRead()" class="btn-light">Đánh dấu đã đọc</button>
+    </div>
+    <div class="flex gap-1.5">${tab("open", "Cần xử lý", open.length)}${tab("done", "Đã xử lý", done.length)}</div>
+    <div class="space-y-2 max-w-3xl">${list.length ? list.map(n => {
+      const t = ticket(n.ticketId), p = project(t.projectId), w = workflow(t.workflowId, p), ty = NOTIF_TYPE[n.type];
+      return `<button onclick="openNotif('${n.id}')" class="w-full text-left p-3.5 rounded-xl border ${n.resolvedAt ? "border-stone-200 bg-stone-50/40" : "border-stone-300 bg-white"} hover:bg-stone-50 flex items-start gap-3">
+        <span class="w-8 h-8 rounded-lg ${ty.cls} flex items-center justify-center shrink-0"><i data-lucide="${ty.icon}" class="w-4 h-4"></i></span>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2"><span class="text-xs font-bold text-stone-900 truncate">${esc(n.title)}</span>${!n.read ? `<span class="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span>` : ""}</div>
+          <div class="text-[11px] text-stone-500 mt-0.5">${esc(n.body)}</div>
+          <div class="text-[11px] text-stone-400 mt-1">${esc(p.name)} / ${esc(w.name)} / <span class="font-mono">#${w.prefix}-${t.number}</span> · ${esc(t.title)}</div>
+        </div>
+        <div class="text-right shrink-0"><div class="text-[11px] text-stone-400">${fmtAt(n.at)}</div>
+          ${n.resolvedAt ? `<div class="text-[11px] text-emerald-700 mt-1">✓ ${esc(n.outcome)}</div>` : `<div class="text-[11px] ${ty.cls.split(" ")[1]} mt-1 font-medium">${ty.label}</div>`}</div>
+      </button>`; }).join("") : `<div class="text-xs text-stone-500 py-6 text-center">${state.notifTab === "open" ? "Không có gì cần xử lý 🎉" : "Chưa có thông báo nào được xử lý."}</div>`}</div>`;
+}
+
+/* ================================================================
+   CHAT
+================================================================ */
+function openTicket(tid) { const t = ticket(tid); go("chat", { ticketId: tid, projectId: t.projectId, workflowId: t.workflowId }); }
+function openCurrentWorkflow() { go("workflow", { workflowId: ticket(state.cur.ticketId).workflowId }); }
+
+function renderChat() {
+  const t = ticket(state.cur.ticketId);
+  if (!t) return go("project");
+  const p = project(t.projectId), w = workflow(t.workflowId, p);
+  $("chat-breadcrumb").innerHTML = `<a class="hover:underline cursor-pointer" onclick="go('project')">${esc(p.name)}</a> <span>/</span>
+    <a class="hover:underline cursor-pointer" onclick="go('workflow',{workflowId:'${w.id}'})">⑂ ${esc(w.name)} (v${t.version})</a> <span>/</span> <span class="font-mono">#${w.prefix}-${t.number}</span>`;
+  $("chat-title").textContent = "# " + t.slug;
+  $("chat-path").textContent = `${p.path} (${p.branch})`;
+  $("chat-status").innerHTML = statusBadge(t.status);
+  const eff = effectiveAgents(p);
+  $("member-count").textContent = eff.length + 1;
+  renderMentionBar(eff);
+  updateChatPlaceholder(t, eff); renderAttachList();
+  $("chat-input").disabled = t.status === "COMPLETED";
+  const hint = $("clarify-hint");
+  hint.classList.toggle("hidden", t.waiting !== "input");
+  if (t.waiting === "input") hint.innerHTML = `🐝 <b>@${esc(t.waitingAgent)}</b> đang chờ bạn cung cấp thêm chi tiết để hoàn tất kịch bản tái tạo lỗi — trả lời trong ô bên dưới.`;
+  $("footer-status").innerHTML = t.footer || (t.status === "COMPLETED" ? "<strong>Hoàn tất.</strong>" : "");
+  const s = $("messages-stream");
+  s.innerHTML = t.messages.map(m => renderMsg(m, t)).join("") + (t.typing ? typingRow(t.typing, t) : "");
+  s.scrollTop = s.scrollHeight;
+  icons();
+}
+function renderMsg(m, t) {
+  if (m.kind === "divider") return `<div class="relative flex items-center py-1"><div class="flex-grow border-t border-stone-200"></div><span class="shrink-0 mx-3 text-[10px] font-bold tracking-wider text-stone-400 uppercase">${esc(m.text)}</span><div class="flex-grow border-t border-stone-200"></div></div>`;
+  if (m.kind === "user") return `<div class="flex items-start gap-3"><div class="w-8 h-8 rounded-full bg-stone-800 text-white flex items-center justify-center font-semibold text-xs shrink-0 mt-0.5">NH</div>
+    <div class="flex-1 space-y-1"><div class="flex items-baseline gap-2"><span class="font-bold text-stone-900 text-xs">Nguyen Manh Hung</span><span class="text-[11px] text-stone-400">${m.time}</span></div><p class="text-stone-800">${m.html}</p></div></div>`;
+  if (m.kind === "confirm") {
+    if (m.resolved) return `<div class="ml-11 -mt-3 text-[11px] text-stone-500">${m.resolved === "approved" ? "✔ Đã xác nhận bởi Nguyen Manh Hung" : "↺ Đã yêu cầu @developer sửa lại"}</div>`;
+    return `<div class="ml-11 -mt-3 p-3 rounded-xl bg-[#F7F6EE] border border-[#DFDDD0] flex items-center justify-between max-w-xl">
+      <span class="text-xs font-medium text-stone-700">Bạn xác nhận lỗi đã được sửa xong?</span>
+      <div class="flex items-center gap-2">
+        <button onclick="rejectFix()" class="px-2.5 py-1 rounded-lg border border-stone-300 bg-white hover:bg-stone-50 text-xs text-stone-700 font-medium">Chưa đạt, sửa lại</button>
+        <button onclick="confirmFix()" class="px-3 py-1 rounded-lg bg-stone-900 hover:bg-stone-800 text-white text-xs font-medium flex items-center gap-1.5"><i data-lucide="check" class="w-3.5 h-3.5"></i> Xác nhận (Báo @leader Push Git)</button>
+      </div></div>`;
+  }
+  const a = agent(m.agentId);
+  return `<div class="flex items-start gap-3"><div class="w-8 h-8 rounded-full border flex items-center justify-center font-bold text-xs shrink-0 mt-0.5 ${AVATAR[roleColor(a)]}">${logo(a)}</div>
+    <div class="flex-1 space-y-1.5 min-w-0"><div class="flex items-baseline gap-2"><span class="font-bold text-stone-900 text-xs">${esc(a.handle)}</span><span class="text-[11px] font-mono text-stone-400">${esc(a.model)}</span><span class="text-[11px] text-stone-400">${m.time}</span></div>${m.logTurn && t ? msgLogHtml(t, m) : ""}${m.html}</div></div>`;
+}
+function typingRow(aid, t) {
+  const a = agent(aid);
+  return `<div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full border flex items-center justify-center text-xs ${AVATAR[roleColor(a)]}">${logo(a)}</div>
+    <span class="text-xs text-stone-400">${esc(a.handle)} đang làm việc <span class="typing"><span>.</span><span>.</span><span>.</span></span></span></div>
+    ${t ? `<div class="ml-11 -mt-1">${liveLogHtml(t)}</div>` : ""}`;
+}
+
+/* ---------------- simulated workflow runner ---------------- */
+function rerender(t) { if (state.cur.view === "chat" && state.cur.ticketId === t.id) renderChat(); renderSidebar(); }
+function say(t, agentId, html) { t.messages.push({ kind: "agent", agentId, time: now(), html, logTurn: (t.log || []).some(l => l.turn === t.curTurn) ? t.curTurn : null }); }
+const code = s => `<code class="bg-stone-100 px-1.5 py-0.5 rounded font-mono text-xs">${esc(s)}</code>`;
+
+
+/* ---- Log agent chạy: 5 dòng gần nhất + xem chi tiết ---- */
+const LOG_COLOR = { tool: "text-sky-300", perm: "text-amber-300", deny: "text-rose-400", ok: "text-emerald-400", info: "text-stone-400", think: "text-violet-300" };
+function logLine(t, a, text, kind = "info") {
+  t.log = t.log || [];
+  t.log.push({ at: Date.now(), agent: a.handle, turn: t.curTurn, text, kind });
+  if (state.cur.view === "chat" && state.cur.ticketId === t.id) { updateLiveLog(t); refreshLogModal(t); }
+}
+const logTime = ts => new Date(ts).toLocaleTimeString("vi-VN", { hour12: false });
+function logRow(l) { return `<div class="flex gap-2 whitespace-pre"><span class="text-stone-600 shrink-0">${logTime(l.at)}</span><span class="text-stone-500 shrink-0">@${esc(l.agent)}</span><span class="${LOG_COLOR[l.kind] || LOG_COLOR.info} truncate">${esc(l.text)}</span></div>`; }
+function turnLog(t, turn) { return (t.log || []).filter(l => l.turn === turn); }
+function logSummary(lines) {
+  const n = re => lines.filter(l => re.test(l.text)).length;
+  const tools = lines.filter(l => l.kind === "tool").length, cmds = n(/^tool: (Bash|GitService)/), edits = n(/^tool: Edit/), denies = lines.filter(l => l.kind === "deny").length;
+  const parts = [];
+  if (tools) parts.push(`Đã dùng ${tools} công cụ`);
+  if (cmds) parts.push(`chạy ${cmds} lệnh`);
+  if (edits) parts.push(`sửa ${edits} file`);
+  if (denies) parts.push(`${denies} lệnh bị chặn`);
+  return parts.join(", ") || "Log agent";
+}
+function logSteps(lines) {
+  return lines.map(l => `<div class="flex gap-2 px-3 py-1.5 border-t border-stone-100 first:border-t-0"><span class="${LOG_COLOR_LIGHT[l.kind] || "text-stone-500"} min-w-0 break-words">${esc(l.text)}</span><span class="ml-auto shrink-0 text-stone-300 font-mono text-[10px]">${logTime(l.at)}</span></div>`).join("");
+}
+const LOG_COLOR_LIGHT = { tool: "text-stone-600", perm: "text-amber-700", deny: "text-rose-600", ok: "text-emerald-700", info: "text-stone-400", think: "text-violet-600" };
+function lastLineHtml(l) { return `<span class="${LOG_COLOR_LIGHT[l.kind] || "text-stone-500"} truncate">${esc(l.text)}</span>`; }
+function logDetails(t, lines, open, attrs, live) {
+  const last = lines[lines.length - 1];
+  return `<details class="group max-w-2xl" ${open ? "open" : ""} ${attrs}>
+    <summary class="list-none cursor-pointer select-none flex items-center gap-1.5 text-xs text-stone-500 hover:text-stone-800 min-w-0">
+      ${live ? `<span class="typing shrink-0 text-emerald-600 font-bold leading-none tracking-widest"><span>.</span><span>.</span><span>.</span></span>` : ""}
+      ${last ? lastLineHtml(live ? { ...last, text: last.text.replace(/^[✔✓]\s*/, "") } : last) : `<span class="text-stone-400">Đang khởi động agent...</span>`}
+      <i data-lucide="chevron-down" class="w-3.5 h-3.5 shrink-0 text-stone-400 transition group-open:rotate-180"></i></summary>
+    <div class="mt-1.5 rounded-xl border border-stone-200 bg-white text-[11.5px] leading-snug overflow-hidden max-h-64 overflow-y-auto">${logSteps(lines)}
+      <button onclick="openAgentLog()" class="w-full text-left px-3 py-1.5 border-t border-stone-100 text-[11px] text-stone-400 hover:text-stone-800">Xem toàn bộ log của ticket →</button></div></details>`;
+}
+function msgLogHtml(t, m) {
+  const lines = turnLog(t, m.logTurn); if (!lines.length) return "";
+  return logDetails(t, lines, m.logOpen, `ontoggle="logToggle('${t.id}',this)" data-turn="${m.logTurn}"`, false);
+}
+function logToggle(tid, el) { const t = ticket(tid); if (el.dataset.turn === "live") t.liveOpen = el.open; else { const m = t.messages.find(x => x.logTurn === el.dataset.turn); if (m) m.logOpen = el.open; } }
+function liveLogHtml(t) {
+  return `<div id="live-log">${logDetails(t, turnLog(t, t.curTurn), t.liveOpen, `ontoggle="logToggle('${t.id}',this)" data-turn="live"`, true)}</div>`;
+}
+function updateLiveLog(t) { const el = $("live-log"); if (!el || !t.typing) return; el.outerHTML = liveLogHtml(t); icons(); const s = $("messages-stream"); s.scrollTop = s.scrollHeight; }
+function openAgentLog() {
+  const t = ticket(state.cur.ticketId);
+  state.logFilter = state.logFilter || "all";
+  $("modal-box").classList.replace("max-w-lg", "max-w-4xl");
+  openModal(`<div class="flex items-center justify-between mb-3"><span class="text-sm font-bold text-stone-900">Log agent — #${esc(t.slug)}</span><button onclick="closeModal()" class="text-stone-400 hover:text-stone-900"><i data-lucide="x" class="w-4 h-4"></i></button></div>
+    <div class="flex items-center gap-2 mb-2"><select id="log-filter" class="inp !w-auto !py-1" onchange="state.logFilter=this.value;refreshLogModal(ticket(state.cur.ticketId))"></select>
+      <span id="log-count" class="text-[11px] text-stone-400"></span>
+      <button class="btn-light !py-1 ml-auto" onclick="copyLog()"><i data-lucide="copy" class="w-3.5 h-3.5"></i> Copy</button></div>
+    <div id="log-full" class="bg-stone-900 text-stone-200 rounded-xl p-3 font-mono text-[11px] leading-[1.6] h-[60vh] overflow-auto space-y-px"></div>`);
+  refreshLogModal(t, true);
+}
+function refreshLogModal(t, force) {
+  const box = $("log-full"); if (!box || $("modal").classList.contains("hidden")) return;
+  const handles = [...new Set((t.log || []).map(l => l.agent))], sel = $("log-filter");
+  sel.innerHTML = `<option value="all">Tất cả agent</option>` + handles.map(h => `<option value="${esc(h)}" ${state.logFilter === h ? "selected" : ""}>@${esc(h)}</option>`).join("");
+  const rows = (t.log || []).filter(l => state.logFilter === "all" || l.agent === state.logFilter);
+  const atBottom = force || box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  box.innerHTML = rows.map(logRow).join("") || `<div class="text-stone-500">Chưa có log.</div>`;
+  $("log-count").textContent = rows.length + " dòng";
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+function copyLog() {
+  const t = ticket(state.cur.ticketId);
+  const txt = (t.log || []).filter(l => state.logFilter === "all" || l.agent === state.logFilter).map(l => `${logTime(l.at)} @${l.agent} ${l.text}`).join("\n");
+  try { navigator.clipboard.writeText(txt); toast("Đã copy log"); } catch (e) { toast("Không copy được"); }
+}
+function logScript(a, t) {
+  if (a.runtime === "openai-api") {
+    const host = a.baseUrl ? new URL(a.baseUrl).host : "api";
+    return [["info", `→ POST ${host}/chat/completions (${a.model}, stream)`], ["think", "đang nhận phản hồi từ API..."], ["tool", "tokens: prompt 1.8k · completion 0.4k"], ["ok", "✔ finish_reason=stop"]];
+  }
+  const path = project(t.projectId).path, br = project(t.projectId).branch;
+  const open = [["info", `→ session/new cwd=${path}`], ["info", `→ session/prompt (${a.runtime} · ${a.model})`]];
+  const by = {
+    BA: [["tool", "tool: Read src/pages/Reconciliation/ReportPage.tsx"], ["tool", "tool: Read src/pages/Reconciliation/ExportButton.tsx"], ["tool", "tool: Grep \"json_to_sheet\" src/"], ["think", "thinking: lập kịch bản tái tạo lỗi (STR)"], ["ok", "✔ stopReason=end_turn"]],
+    DEVELOPER: [["tool", "tool: Read src/pages/Reconciliation/ExportButton.tsx"], ["perm", "permission: Edit src/** → allow (profile developer)"], ["tool", "tool: Edit ExportButton.tsx (+8 −2)"], ["deny", "permission: Bash `git commit` → DENY (blocked_commands)"], ["ok", "✔ stopReason=end_turn"]],
+    TESTER: [["perm", "permission: Bash `npm test` → allow (profile tester)"], ["tool", "tool: Bash npm test -- ExportButton"], ["ok", " PASS  ExportButton.test.tsx (2 tests)"], ["ok", "✔ stopReason=end_turn"]],
+    LEADER: [["tool", "tool: GitService diff --stat"], ["think", "thinking: soạn commit message"], ["tool", "tool: GitService add / commit"], ["tool", `tool: GitService push origin ${br}`], ["ok", "✔ push thành công"]],
+    SECURITY: [["tool", "tool: Read các file vừa sửa"], ["tool", "tool: Grep eval|innerHTML|password"], ["ok", "✔ không phát hiện vấn đề nghiêm trọng"]]
+  };
+  return [...open, ...(by[a.role] || [["tool", "tool: Read files"], ["ok", "✔ stopReason=end_turn"]])];
+}
+
+function runStep(t) {
+  const step = t.steps[t.stepIndex];
+  if (!step) { t.status = "COMPLETED"; t.typing = null; if (!/Commit/.test(t.footer)) t.footer = `<strong>Hoàn tất:</strong> ticket đã đóng.`; return rerender(t); }
+  if (step.type === "gate") {
+    t.status = "WAITING_USER_CONFIRM"; t.waiting = "confirm"; t.typing = null;
+    t.messages.push({ kind: "confirm", resolved: null });
+    notify(t, "confirm", "Xác nhận bản sửa lỗi để @leader commit & push", `Ticket #${workflow(t.workflowId, project(t.projectId)).prefix}-${t.number} đã qua kiểm thử, đang chờ bạn xác nhận.`);
+    const lead = t.steps.slice(t.stepIndex).find(s => s.type === "agent");
+    t.footer = `<strong>${lead ? esc(agent(lead.agentId).handle) : "workflow"}:</strong> Đang chờ người dùng xác nhận`;
+    return rerender(t);
+  }
+  const a = agent(step.agentId);
+  t.curTurn = "u" + Date.now() + Math.random().toString(36).slice(2, 5); t.status = "RUNNING"; t.typing = a.id; t.footer = `<strong>${esc(a.handle)}:</strong> đang làm việc trên ${esc(project(t.projectId).path)}...`;
+  rerender(t);
+  const script = logScript(a, t), STEP_MS = 420;
+  script.forEach(([k, txt], i) => setTimeout(() => { if (t.typing === a.id) logLine(t, a, txt, k); }, 150 + i * STEP_MS));
+  setTimeout(() => {
+    t.typing = null;
+    const next = () => { t.stepIndex++; rerender(t); setTimeout(() => runStep(t), 600); };
+    const nextAgent = t.steps.slice(t.stepIndex + 1).find(s => s.type === "agent");
+    const handoff = nextAgent ? `<p class="pt-1 text-stone-800">${pill(agent(nextAgent.agentId).handle)} bàn giao cho bạn nhé.</p>` : "";
+    switch (a.role) {
+      case "BA":
+        if (!t.baAsked) {
+          t.baAsked = true; t.waiting = "input"; t.waitingAgent = a.handle; t.status = "WAITING_USER_INPUT";
+          say(t, a.id, `<p class="text-stone-800">Mình đã đọc mã nguồn liên quan. Để lập kịch bản tái tạo lỗi (STR) chính xác, bạn cho mình hỏi: lỗi xảy ra ở <b>nhánh code nào</b> và với <b>dữ liệu đầu vào</b> cụ thể ra sao (khoảng ngày, số bản ghi)?</p>`);
+          t.footer = `<strong>${esc(a.handle)}:</strong> Đang chờ bạn trả lời`;
+          notify(t, "input", `@${a.handle} cần bạn trả lời để lập kịch bản`, "Agent hỏi thêm thông tin trước khi chuyển bước tiếp theo.");
+          return rerender(t);
+        }
+        say(t, a.id, `<p class="text-stone-800">Cảm ơn bạn. Kịch bản tái tạo lỗi chi tiết:</p>
+          <ol class="list-decimal pl-5 space-y-1 text-stone-800 text-[13px]"><li><b>Điều kiện:</b> <span class="text-stone-600">${esc(t.lastAnswer || "dữ liệu mẫu")}</span></li>
+          <li><b>Thao tác:</b> <span class="text-stone-600">thực hiện đúng theo mô tả “${esc(t.title)}”.</span></li>
+          <li><b>Kết quả mong muốn:</b> <span class="text-stone-600">chức năng hoạt động ổn định, không treo giao diện.</span></li></ol>${handoff}`);
+        return next();
+      case "DEVELOPER":
+        say(t, a.id, `<p class="text-stone-800">${t.feedback ? `Đã xử lý phản hồi “${esc(t.feedback)}”. ` : ""}Đã sửa ${code("src/pages/Reconciliation/ExportButton.tsx")}. Mình không chạy commit theo quy định.</p>
+          <details class="bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-xs max-w-2xl"><summary class="cursor-pointer font-medium text-stone-700 flex items-center justify-between"><span class="font-mono text-[11px]">📄 Xem thay đổi mã nguồn: ExportButton.tsx (+5 -1)</span><span class="text-[11px] text-stone-400">Bấm để mở</span></summary>
+          <div class="mt-2 pt-2 border-t border-stone-200 font-mono text-[11px] space-y-0.5">
+            <div class="text-rose-600 bg-rose-50 px-2 py-0.5 rounded">- const handleExport = () => XLSX.utils.json_to_sheet(data);</div>
+            <div class="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">+ const handleExport = async () => {</div>
+            <div class="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">+   setIsExporting(true);</div>
+            <div class="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">+   await exportService.downloadStream({ fromDate, toDate });</div>
+            <div class="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">+   setIsExporting(false); };</div></div></details>
+          <div class="text-[11px] font-mono text-rose-600">Guard: đã chặn lệnh <b>git commit</b> của @${esc(a.handle)}</div>${handoff}`);
+        t.feedback = null; return next();
+      case "TESTER":
+        say(t, a.id, `<p class="text-stone-800">Đã chạy kiểm thử ${code("ExportButton.test.tsx")} — <strong>2/2 test cases PASSED</strong>.</p>
+          <div class="bg-stone-900 text-stone-100 rounded-xl p-3 font-mono text-xs max-w-xl space-y-0.5"><div class="text-stone-400">$ npm test -- ExportButton</div><div class="text-emerald-400">✓ should stream excel blob without blocking UI</div><div class="text-emerald-400">✓ should disable button while exporting</div></div>
+          <p class="text-stone-800">Anh <span class="agent-pill">@Nguyen Manh Hung</span> kiểm tra lại nhé. Nếu đã ổn, hãy bấm xác nhận bên dưới để ${pill("leader")} commit & push.</p>`);
+        return next();
+      case "LEADER": {
+        const hash = Math.random().toString(16).slice(2, 9), br = project(t.projectId).branch;
+        say(t, a.id, `<p class="text-stone-800">Đã review ${code("git diff")} — không có file rác/nhạy cảm. Hệ thống đã commit & push:</p>
+          <div class="bg-stone-900 text-stone-100 rounded-xl p-3 font-mono text-xs max-w-xl space-y-0.5"><div class="text-stone-400">$ git add src/pages/Reconciliation/ExportButton.tsx</div>
+          <div class="text-stone-400">$ git commit -m "fix: ${esc(slugify(t.title).replace(/-/g, " ").slice(0, 40))}"</div>
+          <div class="text-emerald-400">[${esc(br)} ${hash}] 1 file changed, 5 insertions(+), 1 deletion(-)</div><div class="text-emerald-400">$ git push origin ${esc(br)} ✔</div></div>`);
+        t.footer = `<strong>Hoàn tất:</strong> Commit ${hash} đã được đẩy lên Git.`;
+        return next();
+      }
+      default:
+        say(t, a.id, `<p class="text-stone-800">Đã review các file vừa sửa theo vai trò <b>${esc(a.name)}</b>: không phát hiện vấn đề nghiêm trọng (không có SQL injection/XSS, không lộ secret).</p>${handoff}`);
+        return next();
+    }
+  }, 300 + script.length * STEP_MS);
+}
+
+function confirmFix() {
+  const t = ticket(state.cur.ticketId);
+  if (t.waiting !== "confirm") return;
+  t.messages.filter(m => m.kind === "confirm" && !m.resolved).forEach(m => m.resolved = "approved");
+  t.messages.push({ kind: "user", time: now(), html: `${pill("leader")} Mình xác nhận đã sửa xong, nhờ Leader commit và push lên Git.` });
+  resolveNotif(t, "Đã xác nhận");
+  t.waiting = null; t.stepIndex++; rerender(t);
+  setTimeout(() => runStep(t), 500);
+}
+function rejectFix() {
+  const t = ticket(state.cur.ticketId);
+  const fb = prompt("Nhập phản hồi chi tiết để @developer sửa lại:");
+  if (!fb) return;
+  t.messages.filter(m => m.kind === "confirm" && !m.resolved).forEach(m => m.resolved = "rejected");
+  t.messages.push({ kind: "user", time: now(), html: `<span class="agent-pill">@developer</span> Chưa đạt: ${esc(fb)}` });
+  t.messages.push({ kind: "divider", text: "Luồng quay lại @developer" });
+  resolveNotif(t, "Đã từ chối, gửi lại @developer");
+  t.feedback = fb; t.waiting = null;
+  const devIdx = t.steps.findIndex(s => s.type === "agent" && agent(s.agentId).role === "DEVELOPER");
+  t.stepIndex = devIdx >= 0 ? devIdx : 0;
+  rerender(t); setTimeout(() => runStep(t), 500);
+}
+
+/* ---- Nút @ chọn agent (popup) — lựa chọn được nhớ cho các chat sau ---- */
+try { state.defaultMention = localStorage.getItem("aiteams_default_mention") || null; } catch (e) { state.defaultMention = null; }
+function defaultAgent(eff) { return state.defaultMention ? (eff || effectiveAgents(project())).find(a => a.id === state.defaultMention) : null; }
+function updateChatPlaceholder(t, eff) {
+  const d = defaultAgent(eff);
+  $("chat-input").placeholder = d ? `Nhắn tin vào #${t.slug} — mặc định gửi tới @${d.handle}...` : `Nhắn tin vào #${t.slug} (bấm nút @ để chọn agent)...`;
+}
+function renderMentionBar(eff) {
+  const d = defaultAgent(eff);
+  $("mention-bar").innerHTML = `<div class="relative">
+    <button id="mention-btn" onclick="toggleMentionMenu(event)" class="flex items-center gap-1.5 text-xs font-mono px-2 py-1 rounded-lg border border-stone-300 hover:bg-stone-100 text-stone-700">
+      ${d ? `${logo(d)} @${esc(d.handle)}` : `<span class="font-bold">@</span> Chọn agent`} <i data-lucide="chevron-up" class="w-3 h-3 text-stone-400"></i></button>
+    <div id="mention-menu" class="hidden absolute bottom-full left-0 mb-2 z-30 w-72 bg-white border border-stone-200 rounded-xl shadow-lg p-1.5">
+      <div class="px-2 py-1 text-[10px] uppercase tracking-wider text-stone-400 font-semibold">Gửi tới agent (lưu làm mặc định)</div>
+      ${eff.map(a => `<button onclick="pickMention('${a.id}')" class="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-stone-100 text-left">
+        <span class="w-6 h-6 rounded-full border flex items-center justify-center text-xs ${AVATAR[roleColor(a)]}">${logo(a)}</span>
+        <span class="min-w-0 flex-1"><span class="block text-xs font-mono font-bold text-stone-900">@${esc(a.handle)}</span><span class="block text-[11px] text-stone-500 truncate">${esc(a.name)}</span></span>
+        ${state.defaultMention === a.id ? `<i data-lucide="check" class="w-3.5 h-3.5 text-stone-900"></i>` : ""}</button>`).join("")}
+      ${d ? `<button onclick="pickMention(null)" class="w-full text-left px-2 py-1.5 mt-0.5 border-t border-stone-100 text-[11px] text-stone-500 hover:text-stone-900">Bỏ mặc định</button>` : ""}
+    </div></div>`;
+  icons();
+}
+function toggleMentionMenu(e) { e.stopPropagation(); $("mention-menu").classList.toggle("hidden"); }
+function pickMention(id) {
+  state.defaultMention = id;
+  try { id ? localStorage.setItem("aiteams_default_mention", id) : localStorage.removeItem("aiteams_default_mention"); } catch (e) {}
+  const t = ticket(state.cur.ticketId), eff = effectiveAgents(project(t.projectId));
+  renderMentionBar(eff); updateChatPlaceholder(t, eff); $("chat-input").focus();
+  if (id) toast(`Mặc định gửi tới @${agent(id).handle} cho các chat tiếp theo`);
+}
+document.addEventListener("click", e => { const m = $("mention-menu"); if (m && !m.classList.contains("hidden") && !e.target.closest("#mention-menu")) m.classList.add("hidden"); });
+
+/* ---- Đính kèm file trong chat ---- */
+const ATTACH_MAX_FILES = 5, ATTACH_MAX_MB = 10;
+const fmtSize = n => n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(0) + " KB" : (n / 1048576).toFixed(1) + " MB";
+function fileIcon(name, type) {
+  if (type.startsWith("image/")) return "image";
+  if (/\.(zip|rar|7z|tar|gz)$/i.test(name)) return "file-archive";
+  if (/\.(log|txt|md|json|csv|xml|ya?ml)$/i.test(name)) return "file-text";
+  if (/\.(js|jsx|ts|tsx|py|java|cs|go|sql|html|css)$/i.test(name)) return "file-code";
+  return "file";
+}
+function addFiles(list) {
+  const t = ticket(state.cur.ticketId); if (!t || t.status === "COMPLETED") return;
+  t.draftFiles = t.draftFiles || [];
+  [...list].forEach(file => {
+    if (t.draftFiles.length >= ATTACH_MAX_FILES) return toast(`Tối đa ${ATTACH_MAX_FILES} file mỗi tin nhắn`);
+    if (file.size > ATTACH_MAX_MB * 1048576) return toast(`${file.name} vượt quá ${ATTACH_MAX_MB}MB`);
+    const item = { name: file.name, size: file.size, type: file.type || "", preview: null };
+    t.draftFiles.push(item);
+    if (item.type.startsWith("image/") && file.size < 3 * 1048576) {
+      const r = new FileReader(); r.onload = () => { item.preview = r.result; renderAttachList(); }; r.readAsDataURL(file);
+    }
+  });
+  renderAttachList();
+}
+function removeAttach(i) { const t = ticket(state.cur.ticketId); t.draftFiles.splice(i, 1); renderAttachList(); }
+function renderAttachList() {
+  const t = ticket(state.cur.ticketId), box = $("attach-list"), files = (t && t.draftFiles) || [];
+  box.classList.toggle("hidden", !files.length); box.classList.toggle("flex", !!files.length);
+  box.innerHTML = files.map((f, i) => `<div class="relative group flex items-center gap-2 pl-1.5 pr-6 py-1 rounded-lg border border-stone-200 bg-stone-50 max-w-[220px]">
+    ${f.preview ? `<img src="${f.preview}" class="w-8 h-8 rounded object-cover">` : `<span class="w-8 h-8 rounded bg-stone-200 flex items-center justify-center"><i data-lucide="${fileIcon(f.name, f.type)}" class="w-4 h-4 text-stone-600"></i></span>`}
+    <span class="min-w-0"><span class="block text-[11px] font-medium text-stone-800 truncate">${esc(f.name)}</span><span class="block text-[10px] text-stone-400">${fmtSize(f.size)}</span></span>
+    <button onclick="removeAttach(${i})" title="Bỏ file" class="absolute top-1 right-1 text-stone-400 hover:text-rose-600"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`).join("");
+  icons();
+}
+function attachHtml(files) {
+  return `<div class="flex flex-wrap gap-2 mt-1.5">${files.map(f => f.preview
+    ? `<a class="block"><img src="${f.preview}" title="${esc(f.name)}" class="max-h-40 max-w-[260px] rounded-lg border border-stone-200 object-cover"></a>`
+    : `<span class="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-stone-200 bg-stone-50 text-xs"><i data-lucide="${fileIcon(f.name, f.type)}" class="w-4 h-4 text-stone-600"></i><span class="font-medium text-stone-800">${esc(f.name)}</span><span class="text-stone-400">${fmtSize(f.size)}</span></span>`).join("")}</div>`;
+}
+function quickMention(tag) {
+  if (state.cur.view !== "chat") return;
+  const i = $("chat-input"); i.value = tag + i.value; i.focus();
+}
+function sendChatMessage() {
+  const t = ticket(state.cur.ticketId), i = $("chat-input");
+  let text = i.value.trim();
+  const files = (t && t.draftFiles) || [];
+  if (!t || (!text && !files.length)) return;
+  const dm = defaultAgent();
+  if (dm && !/@[a-z0-9_\-]+/i.test(text)) text = `@${dm.handle} ${text}`.trim();
+  i.value = ""; t.draftFiles = []; renderAttachList();
+  const low = text.toLowerCase();
+  if (t.waiting === "confirm" && low.includes("@leader") && /(confirm|done|ok|đã fix|xác nhận)/.test(low)) return confirmFix();
+  t.messages.push({ kind: "user", time: now(), html: esc(text).replace(/@([a-z0-9_\-]+)/g, (_, h) => pill(h)) + (files.length ? attachHtml(files) : "") });
+  if (files.length) t.lastAttachments = files.map(f => f.name);
+  if (t.waiting === "input") { resolveNotif(t, "Đã trả lời"); t.waiting = null; t.lastAnswer = text; t.status = "RUNNING"; rerender(t); return setTimeout(() => runStep(t), 500); }
+  rerender(t);
+}
+
+/* ================================================================
+   MODAL
+================================================================ */
+function openModal(html) { $("modal-box").innerHTML = html; $("modal").classList.remove("hidden"); $("modal").classList.add("flex"); icons(); }
+function closeModal() { $("modal-box").classList.replace("max-w-4xl", "max-w-lg"); $("modal").classList.add("hidden"); $("modal").classList.remove("flex"); }
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+
+/* ================================================================
+   SEED TICKETS (demo)
+================================================================ */
+(function seedTickets() {
+  const bugSteps = tpl("bugfix");
+  state.tickets.push({
+    id: "k_103", projectId: "p_hnbg", workflowId: "w_bug", number: 103, version: 2, steps: bugSteps, stepIndex: 5, slug: "bug-format-tien-te",
+    title: "Sai định dạng tiền tệ VNĐ ở bảng tổng hợp", status: "COMPLETED", baAsked: true, footer: "<strong>Hoàn tất:</strong> Commit 7a8f12c đã được đẩy lên Git.",
+    messages: [
+      { kind: "user", time: "Hôm qua", html: `${pill("ba")} Bảng tổng hợp hiển thị 1000000 thay vì 1.000.000 ₫.` },
+      { kind: "divider", text: "Workflow Fix Bug v2 bắt đầu" },
+      { kind: "agent", agentId: "a_lead", time: "Hôm qua", html: `<div class="bg-stone-900 text-stone-100 rounded-xl p-3 font-mono text-xs max-w-xl"><div class="text-emerald-400">[hotfix/reconciliation 7a8f12c] fix(summary): format VND currency</div></div>` }
+    ]
+  });
+  state.tickets.push({
+    id: "k_104", projectId: "p_hnbg", workflowId: "w_bug", number: 104, version: 3, steps: bugSteps, stepIndex: 3, slug: "bug-xuat-excel",
+    title: "Đơ nút Xuất Excel báo cáo đối soát khi chọn khoảng ngày lớn", status: "WAITING_USER_CONFIRM", waiting: "confirm", baAsked: true,
+    footer: "<strong>leader:</strong> Đang chờ người dùng xác nhận để commit & push Git",
+    messages: [
+      { kind: "user", time: "9:15 AM", html: `${pill("ba")} Ở màn hình Đối soát doanh thu, khi chọn ngày từ đầu tháng đến cuối tháng rồi bấm nút "Xuất Excel" thì trình duyệt bị đơ cứng không tải được file.` },
+      { kind: "divider", text: "Workflow Fix Bug v3 bắt đầu" },
+      { kind: "agent", agentId: "a_ba", time: "9:16 AM", html: `<p class="text-stone-800">Mình đã kiểm tra mã nguồn trong ${code("D:\\VETC\\FE\\HNBG_DEV")}. Kịch bản tái tạo lỗi:</p>
+        <ol class="list-decimal pl-5 space-y-1.5 text-stone-800"><li><strong>Điều kiện & Màn hình</strong><ul class="list-disc pl-5 text-stone-600 text-xs mt-0.5"><li>Truy cập <code class="font-mono">/reconciliation/report</code>, chọn <code class="font-mono">01/10/2026</code> → <code class="font-mono">22/10/2026</code>.</li></ul></li>
+        <li><strong>Thao tác gây lỗi</strong><ul class="list-disc pl-5 text-stone-600 text-xs mt-0.5"><li>Bấm <b>Xuất Excel</b> (<code class="font-mono">ExportButton.tsx</code>) — <code class="font-mono">XLSX.utils.json_to_sheet</code> chạy đồng bộ trên Main Thread.</li></ul></li>
+        <li><strong>Kết quả mong muốn</strong><ul class="list-disc pl-5 text-stone-600 text-xs mt-0.5"><li>Xử lý bất đồng bộ, khoá nút kèm loading.</li></ul></li></ol>
+        <p class="pt-1 text-stone-800">${pill("developer")} bàn giao cho bạn sửa lỗi theo kịch bản trên nhé.</p>
+        <div class="flex items-center gap-1.5 pt-1"><span class="px-2 py-0.5 rounded-full bg-stone-100 border border-stone-200 text-[11px] text-stone-600">👀 1</span><span class="px-2 py-0.5 rounded-full bg-stone-100 border border-stone-200 text-[11px] text-stone-600">✅ 1</span></div>` },
+      { kind: "agent", agentId: "a_dev", time: "9:18 AM", html: `<p class="text-stone-800">Đã sửa xong ${code("src/pages/Reconciliation/ExportButton.tsx")} (async stream + state ${code("isExporting")}). Mình không chạy commit theo quy định.</p>
+        <details class="bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-xs max-w-2xl"><summary class="cursor-pointer font-medium text-stone-700 flex items-center justify-between"><span class="font-mono text-[11px]">📄 Xem thay đổi mã nguồn: ExportButton.tsx (+8 -2)</span><span class="text-[11px] text-stone-400">Bấm để mở</span></summary>
+        <div class="mt-2 pt-2 border-t border-stone-200 font-mono text-[11px] space-y-0.5"><div class="text-rose-600 bg-rose-50 px-2 py-0.5 rounded">- const handleExport = () => XLSX.utils.json_to_sheet(data);</div>
+        <div class="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">+ const handleExport = async () => {</div><div class="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">+   setIsExporting(true);</div>
+        <div class="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">+   await exportService.downloadStream({ fromDate, toDate });</div><div class="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">+   setIsExporting(false);</div><div class="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">+ };</div></div></details>
+        <p class="pt-1 text-stone-800">${pill("tester")} nhờ bạn kiểm tra nghiệm thu lại bản sửa này.</p>` },
+      { kind: "agent", agentId: "a_test", time: "9:20 AM", html: `<p class="text-stone-800">Đã chạy kiểm thử ${code("ExportButton.test.tsx")} — <strong>2/2 test cases PASSED</strong>. Giao diện không còn bị treo khi xuất dữ liệu lớn.</p>
+        <p class="text-stone-800">Anh <span class="agent-pill">@Nguyen Manh Hung</span> kiểm tra lại nhé. Nếu đã ổn, hãy bấm xác nhận bên dưới để ${pill("leader")} commit & push lên Git.</p>` },
+      { kind: "confirm", resolved: null }
+    ]
+  });
+  state.notifications.push(
+    { id: "n_seed1", ticketId: "k_104", type: "confirm", title: "Xác nhận bản sửa lỗi để @leader commit & push", body: "Ticket #BUG-104 đã qua kiểm thử (2/2 test PASSED), đang chờ bạn xác nhận.", at: Date.now() - 25 * 60e3, read: false, resolvedAt: null, outcome: null },
+    { id: "n_seed2", ticketId: "k_103", type: "confirm", title: "Xác nhận bản sửa lỗi để @leader commit & push", body: "Ticket #BUG-103 đã qua kiểm thử.", at: Date.now() - 20 * 3600e3, read: true, resolvedAt: Date.now() - 19 * 3600e3, outcome: "Đã xác nhận" },
+    { id: "n_seed3", ticketId: "k_103", type: "input", title: "@ba cần bạn trả lời để lập kịch bản", body: "Agent hỏi thêm về nhánh code xảy ra lỗi.", at: Date.now() - 22 * 3600e3, read: true, resolvedAt: Date.now() - 21.5 * 3600e3, outcome: "Đã trả lời" }
+  );
+  const tk = state.tickets.find(x => x.id === "k_104"), T = (m) => Date.now() - m * 60e3;
+  tk.log = [
+    [38, "ba", "→ session/new cwd=D:\\VETC\\FE\\HNBG_DEV", "info"], [38, "ba", "tool: Read src/pages/Reconciliation/ExportButton.tsx", "tool"], [37, "ba", "✔ stopReason=end_turn", "ok"],
+    [35, "developer", "permission: Edit src/** → allow (profile developer)", "perm"], [35, "developer", "tool: Edit ExportButton.tsx (+8 −2)", "tool"], [34, "developer", "permission: Bash `git commit` → DENY (blocked_commands)", "deny"], [34, "developer", "✔ stopReason=end_turn", "ok"],
+    [32, "tester", "tool: Bash npm test -- ExportButton", "tool"], [31, "tester", " PASS  ExportButton.test.tsx (2 tests)", "ok"], [31, "tester", "✔ stopReason=end_turn", "ok"]
+  ].map(([m, agent, text, kind]) => ({ at: T(m), agent, turn: "seed_" + agent, text, kind }));
+  const seedMap = { a_ba: "seed_ba", a_dev: "seed_developer", a_test: "seed_tester" };
+  tk.messages.forEach(m => { if (m.kind === "agent" && seedMap[m.agentId]) m.logTurn = seedMap[m.agentId]; });
+  state.cur.ticketId = "k_104";
+})();
+
+window.onload = () => go("chat", { ticketId: "k_104" });
+</script>
+</body>
+</html>
