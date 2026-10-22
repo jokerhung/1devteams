@@ -1,0 +1,16 @@
+{
+  "name": "aiteams",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "lint": "npm --prefix frontend run lint",
+    "typecheck": "npm --prefix frontend run typecheck"
+  },
+  "devDependencies": {
+    "@agentclientprotocol/claude-agent-acp": "0.94.0",
+    "@agentclientprotocol/codex-acp": "2.2.2"
+  }
+}

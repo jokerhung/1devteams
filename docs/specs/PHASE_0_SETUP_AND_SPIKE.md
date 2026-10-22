@@ -101,7 +101,15 @@ npm i @tanstack/react-query zustand lucide-react @xyflow/react react-markdown re
 - `.gitignore`: `.venv`, `node_modules`, `*.db`, `spike_logs/`, `.env`.
 
 ## 4. Definition of Done
-- [ ] `GET /api/health` trả 200, hiển thị đúng trạng thái 2 binary.
-- [ ] `npm run dev` hiển thị trang health.
-- [ ] `ruff`, `mypy`, `pytest` (1 test health) chạy pass.
+- [x] `GET /api/health` trả 200, hiển thị đúng trạng thái 2 binary.
+- [x] `npm run dev` phục vụ trang health (HTTP 200; chưa kiểm tra visual do browser connector thiếu auth).
+- [x] `ruff`, `mypy`, `pytest` (4 tổ hợp trạng thái binary) chạy pass.
 - [ ] `ACP_SPIKE_NOTES.md` điền đủ bảng, kèm 2 file log NDJSON mẫu (đã xóa thông tin nhạy cảm) đặt trong `backend/tests/fixtures/acp/` để Phase 1 dùng làm dữ liệu test giả lập.
+
+### Tiến độ thực tế — 22/10/2026
+
+Skeleton, dev script và tooling đã triển khai. Spike Codex hoàn tất; cả hai runtime có
+log thật đã khử thông tin trong fixtures. Claude đã xác minh initialize/session/model/cancel,
+nhưng chưa xác minh prompt và tool: gateway local cấu hình qua `ANTHROPIC_BASE_URL`
+ở cổng 20128 không lắng nghe. Không đánh dấu hoàn tất Phase 0 cho tới khi chạy lại
+được full spike Claude. Chi tiết và lệnh tái lập ở [ACP_SPIKE_NOTES.md](ACP_SPIKE_NOTES.md).

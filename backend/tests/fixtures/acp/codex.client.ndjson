@@ -1,0 +1,8 @@
+{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": 1, "clientCapabilities": {"fs": {"readTextFile": true, "writeTextFile": true}, "terminal": true}, "clientInfo": {"name": "aiteams", "version": "0.1.0"}}}
+{"jsonrpc": "2.0", "id": 2, "method": "session/new", "params": {"cwd": "C:\\spike\\workspace", "mcpServers": []}}
+{"jsonrpc": "2.0", "id": 3, "method": "session/set_mode", "params": {"sessionId": "sessionId-1", "modeId": "read-only"}}
+{"jsonrpc": "2.0", "id": 4, "method": "session/set_model", "params": {"sessionId": "sessionId-1", "modelId": "gpt-6.1-sol[medium]"}}
+{"jsonrpc": "2.0", "id": 5, "method": "session/prompt", "params": {"sessionId": "sessionId-1", "prompt": [{"type": "text", "text": "You are a BA. When asked your role, reply exactly: AITEAMS_BA_SPIKE.\n\nList the files in src, read src/example.py, and create hello.txt containing exactly hello from aiTeams. Use your tools, only within this disposable workspace. Do not modify any other files. Then answer: what is your role?"}]}}
+{"jsonrpc": "2.0", "id": 0, "result": {"outcome": {"outcome": "selected", "optionId": "allow_once"}}}
+{"jsonrpc": "2.0", "id": 6, "method": "session/prompt", "params": {"sessionId": "sessionId-1", "prompt": [{"type": "text", "text": "Use a terminal to run a command that waits 30 seconds, then list src again. Do not modify files."}]}}
+{"jsonrpc": "2.0", "method": "session/cancel", "params": {"sessionId": "sessionId-1"}}

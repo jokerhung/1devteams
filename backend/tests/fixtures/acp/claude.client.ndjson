@@ -1,0 +1,5 @@
+{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": 1, "clientCapabilities": {"fs": {"readTextFile": true, "writeTextFile": true}, "terminal": true}, "clientInfo": {"name": "aiteams", "version": "0.1.0"}}}
+{"jsonrpc": "2.0", "id": 2, "method": "session/new", "params": {"cwd": "C:\\spike\\workspace", "mcpServers": [], "_meta": {"systemPrompt": {"append": "You are a BA. When asked your role, reply exactly: AITEAMS_BA_SPIKE."}}}}
+{"jsonrpc": "2.0", "id": 3, "method": "session/set_config_option", "params": {"sessionId": "sessionId-1", "configId": "model", "value": "sonnet"}}
+{"jsonrpc": "2.0", "id": 4, "method": "session/prompt", "params": {"sessionId": "sessionId-1", "prompt": [{"type": "text", "text": "Use a terminal to run a command that waits 30 seconds, then list src again. Do not modify files."}]}}
+{"jsonrpc": "2.0", "method": "session/cancel", "params": {"sessionId": "sessionId-1"}}
