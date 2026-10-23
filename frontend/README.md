@@ -7,8 +7,8 @@ Run both from the repository root with `./scripts/dev.ps1` (`-Setup` on first ru
 Ports are configurable in the root `.env`.
 
 The workspace includes login, Agents & Teams, projects/settings/members, notifications,
-workflow overview/template publishing and ticket creation. Canvas and ticket chat are
-placeholders for Phases 5–6.
+workflow wizard, React Flow canvas, pipeline, draft validation/publishing, independent
+workflow lifecycle and ticket creation. Full ticket chat belongs to Phase 6.
 
 Auth uses a same-origin server proxy with an httpOnly JWT cookie. `BACKEND_URL` can set
 the server-side backend address; it falls back to `NEXT_PUBLIC_API_URL` then port 8060.
@@ -32,4 +32,5 @@ Prepare `backend/.venv` first. On Linux it uses `.venv/bin/python`; on Windows
 `.venv/Scripts/python.exe`. Override with `E2E_PYTHON` if needed.
 
 See [Phase 4 implementation notes](../docs/specs/PHASE_4_IMPLEMENTATION_NOTES.md)
+and [Phase 5 implementation notes](../docs/specs/PHASE_5_IMPLEMENTATION_NOTES.md)
 for details and verification results.

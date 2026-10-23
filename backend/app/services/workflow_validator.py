@@ -47,6 +47,9 @@ def validate_graph(graph: Graph, agents: list[Agent]) -> list[str]:
             errors.append("Mọi node phải có đường tới end")
     by_id = {agent.id: agent for agent in agents if agent.is_active}
     for node in graph.nodes:
+        iterations = node.data.get("max_iterations")
+        if iterations is not None and (type(iterations) is not int or not 1 <= iterations <= 1000):
+            errors.append(f"{node.id}: max_iterations phải là số nguyên từ 1 đến 1000")
         routing = node.data.get("routing", "none")
         required: set[str | None] = {None}
         if node.type == "end":

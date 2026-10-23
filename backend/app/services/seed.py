@@ -73,7 +73,15 @@ async def seed(db, settings) -> None:
 
 def template_graph(name: str, agents: list[Agent]) -> Graph:
     if name == "blank":
-        return Graph()
+        return Graph.model_validate(
+            {
+                "nodes": [
+                    {"id": "start", "type": "start", "position": {"x": 0, "y": 0}},
+                    {"id": "end", "type": "end", "position": {"x": 400, "y": 0}},
+                ],
+                "edges": [{"id": "e0", "source": "start", "target": "end"}],
+            }
+        )
     roles = {agent.role_key: agent.id for agent in agents if agent.is_active}
     specs = [
         ("start", "start", {}),
@@ -99,9 +107,9 @@ def template_graph(name: str, agents: list[Agent]) -> Graph:
     ]
     if name == "bugfix_with_security_review":
         security_id = roles.get("SECURITY")
-        specs.insert(5, ("n_security", "agent", {"agent_id": security_id, "routing": "review"}))
-        links = [(s, "n_security" if s == "n_test" and h == "pass" else t, h) for s, t, h in links]
-        links += [("n_security", "g_conf", "pass"), ("n_security", "n_dev", "fail")]
+        specs.insert(4, ("n_security", "agent", {"agent_id": security_id, "routing": "review"}))
+        links = [(s, "n_security" if s == "n_dev" and t == "n_test" else t, h) for s, t, h in links]
+        links += [("n_security", "n_test", "pass"), ("n_security", "n_dev", "fail")]
     return Graph.model_validate(
         {
             "nodes": [

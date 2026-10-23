@@ -1,5 +1,7 @@
 # PHASE 5 — Workflow Builder kéo thả (kiểu Dify) với `@xyflow/react`
 
+Triển khai và kiểm chứng: [PHASE_5_IMPLEMENTATION_NOTES.md](PHASE_5_IMPLEMENTATION_NOTES.md).
+
 ## 1. Mục tiêu
 Một project có **nhiều workflow** — đây là bước 2 trong thứ tự Project → **Workflow** → Ticket → Chat. Phase này làm:
 1. Danh sách workflow của project + **wizard tạo workflow** (`/projects/[id]/workflows`, `/projects/[id]/workflows/new`).
@@ -109,8 +111,8 @@ Xuất `WorkflowReadonlyGraph` (canvas không cho sửa, `fitView`, nhận `node
 - Playwright `workflow.spec.ts`: bắt đầu từ **project trống** (vừa tạo, chưa có team/workflow) → thêm *Core Bugfix Squad* ở “Thành viên & AI Team” → trong project HNBG_DEV tạo workflow *Fix Bug* (BUG) từ mẫu → Xuất bản; tạo workflow thứ 2 *Fix Bug + Security* (SEC) bằng nhân bản → kéo `@security_checker` vào giữa developer–tester, nối lại dây → Lưu → reload → sơ đồ giữ nguyên, version tăng → Xuất bản → sidebar hiển thị 2 workflow; prefix trùng `BUG` → báo lỗi; workflow nháp không có nút tạo ticket.
 
 ## 10. Definition of Done
-- [ ] Kéo thả, nối dây, xoá, undo/redo hoạt động mượt với ≥ 30 node.
-- [ ] JSON lưu khớp 100% schema backend; backend validate pass với template.
-- [ ] Một project tạo/sửa/xuất bản/lưu trữ được nhiều workflow độc lập; mỗi workflow có prefix ticket riêng.
-- [ ] Custom agent mới tạo ở Phase 4 xuất hiện ngay trong palette (sau khi thêm vào project).
-- [ ] PipelineView hiển thị đúng như mockup cho template mặc định.
+- [x] Kéo thả, nối dây, xoá, undo/redo hoạt động mượt với ≥ 30 node.
+- [x] JSON lưu khớp 100% schema backend; backend validate pass với template.
+- [x] Một project tạo/sửa/xuất bản/lưu trữ được nhiều workflow độc lập; mỗi workflow có prefix ticket riêng.
+- [x] Custom agent mới tạo ở Phase 4 xuất hiện ngay trong palette (sau khi thêm vào project).
+- [x] PipelineView hiển thị đúng như mockup cho template mặc định.

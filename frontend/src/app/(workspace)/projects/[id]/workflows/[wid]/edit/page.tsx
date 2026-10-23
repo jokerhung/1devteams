@@ -1,9 +1,9 @@
-import { WorkflowEditorPlaceholder } from "@/components/ui-app/workflow-pages";
+import { WorkflowEditor } from "@/components/workflow/WorkflowEditor";
 export default async function Page({
   params,
 }: {
   params: Promise<{ id: string; wid: string }>;
 }) {
   const p = await params;
-  return <WorkflowEditorPlaceholder pid={p.id} wid={p.wid} />;
+  return <WorkflowEditor pid={p.id} wid={p.wid} />;
 }

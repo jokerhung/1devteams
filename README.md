@@ -4,9 +4,10 @@ Phase 1 ACP/API bridge: [implementation, usage and verification status](docs/spe
 Phase 2 Database & REST API: [cấu hình đăng nhập, migration và API](docs/specs/PHASE_2_IMPLEMENTATION_NOTES.md).
 Phase 3 Workflow Engine: [runner, checkpoint, gates, Git release và realtime](docs/specs/PHASE_3_IMPLEMENTATION_NOTES.md).
 Phase 4 Frontend Shell & Management: [giao diện, đăng nhập, quản lý và kiểm thử](docs/specs/PHASE_4_IMPLEMENTATION_NOTES.md).
+Phase 5 Workflow Builder: [wizard, canvas, pipeline và kiểm thử](docs/specs/PHASE_5_IMPLEMENTATION_NOTES.md).
 
 Monorepo FastAPI + Next.js 15, ACP/API bridge, database/REST API, workflow engine
-và giao diện quản lý. Workflow canvas và chat đầy đủ thuộc Phase 5–6. Native ACP còn bị khóa bởi policy gate
+và giao diện quản lý với Workflow Builder. Chat đầy đủ thuộc Phase 6. Native ACP còn bị khóa bởi policy gate
 cho đến khi công cụ của adapter được cách ly và kiểm chứng; xem ghi chú Phase 3.
 
 ## Cài đặt (PowerShell)

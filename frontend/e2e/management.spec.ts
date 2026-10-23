@@ -142,11 +142,18 @@ test("real backend: manage agents, teams, empty projects, members, published wor
   await expect(page.getByLabel("Quyền Reporter Test")).toHaveValue("REPORTER");
   await page.getByRole("link", { name: "Về project", exact: true }).click();
   await page.getByRole("link", { name: "Tạo workflow", exact: true }).click();
-  await page.getByRole("button", { name: "Tạo workflow nháp" }).click();
-  await expect(
-    page.getByRole("button", { name: "+ Tạo ticket", exact: true }),
-  ).toBeDisabled();
-  await page.getByRole("button", { name: "Xuất bản workflow" }).click();
+  await page.getByRole("button", { name: "Tiếp tục", exact: true }).click();
+  await page.getByRole("button", { name: "Tiếp tục", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Tạo & mở canvas", exact: true })
+    .click();
+  await expect(page.getByTestId("workflow-editor")).toBeVisible();
+  await page.getByRole("button", { name: "Xuất bản", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Xác nhận", exact: true })
+    .click();
+  await page.getByRole("link", { name: "Fix Bug (BUG)", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "+ Tạo ticket", exact: true }),
   ).toBeEnabled();

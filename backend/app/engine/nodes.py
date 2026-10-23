@@ -443,7 +443,8 @@ def make_node(node: Node, agents: dict[str, AgentRuntimeConfig]) -> Callable[...
         count = iterations.get(nid, 0) + 1
         counts = state.get("gate_counts", {})
         inputs: list[dict[str, Any]] = []
-        if count > ctx.settings.max_node_iterations:
+        iteration_limit = node.data.get("max_iterations") or ctx.settings.max_node_iterations
+        if count > iteration_limit:
             answer, counts = await gate(
                 state,
                 ctx,
@@ -451,7 +452,7 @@ def make_node(node: Node, agents: dict[str, AgentRuntimeConfig]) -> Callable[...
                 "human_input",
                 {
                     "question": (
-                        f"Luồng đã lặp quá {ctx.settings.max_node_iterations} lần ở {nid}. "
+                        f"Luồng đã lặp quá {iteration_limit} lần ở {nid}. "
                         "Nhập hướng dẫn để tiếp tục hoặc huỷ ticket."
                     )
                 },

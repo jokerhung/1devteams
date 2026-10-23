@@ -8,6 +8,7 @@ import { Plus, Settings, Users, Folder } from "lucide-react";
 import { apiFetch, send } from "@/lib/api";
 import { keys } from "@/lib/query-keys";
 import { allProjects } from "@/lib/projects";
+import { WorkflowCard } from "@/components/workflow/WorkflowCard";
 import { WorkspacePathField } from "./workspace-path-field";
 import type {
   Agent,
@@ -300,82 +301,12 @@ export function ProjectOverview({
         ) : (
           <div className="grid gap-3 xl:grid-cols-2">
             {workflows.data.map((w) => (
-              <article key={w.id} className="card">
-                <div className="flex items-center gap-2">
-                  <span>{w.icon}</span>
-                  <Link
-                    className="text-sm font-semibold hover:underline"
-                    href={`/projects/${pid}/workflows/${w.id}`}
-                  >
-                    {w.name}
-                  </Link>
-                  <span className="badge font-mono">{w.ticket_prefix}</span>
-                  <span className="badge ml-auto">
-                    {w.status === "PUBLISHED"
-                      ? `Đã xuất bản v${w.published_version}`
-                      : w.status === "DRAFT"
-                        ? "Nháp"
-                        : "Lưu trữ"}
-                  </span>
-                </div>
-                <p className="mt-3 text-xs text-stone-500">{w.description}</p>
-                <p className="my-3 truncate font-mono text-[11px] text-stone-500">
-                  {(w.graph.nodes || [])
-                    .filter((n) => ["agent", "human_confirm"].includes(n.type))
-                    .map((n) =>
-                      n.type === "human_confirm"
-                        ? "✋"
-                        : String(
-                            n.data?.label ||
-                              n.data?.agent_handle ||
-                              agents.data?.find(
-                                (a) => a.id === n.data?.agent_id,
-                              )?.handle ||
-                              n.id,
-                          ),
-                    )
-                    .join(" → ")}
-                </p>
-                <div className="mb-3 flex flex-wrap gap-1">
-                  {Object.entries(w.ticket_counts || {}).map(
-                    ([status, count]) => (
-                      <span
-                        key={status}
-                        className="flex items-center gap-1 text-[10px]"
-                      >
-                        <StatusBadge status={status} />
-                        {count}
-                      </span>
-                    ),
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    className="btn btn-dark"
-                    title={
-                      w.status !== "PUBLISHED"
-                        ? "Xuất bản workflow trước"
-                        : "Tạo ticket"
-                    }
-                    disabled={w.status !== "PUBLISHED"}
-                    onClick={() => setTicketWorkflow(w.id)}
-                  >
-                    Tạo ticket
-                  </button>
-                  <Link
-                    className="btn btn-light"
-                    href={`/projects/${pid}/workflows/${w.id}/edit`}
-                  >
-                    Sửa luồng
-                  </Link>
-                  <Link
-                    className="btn btn-light"
-                    href={`/projects/${pid}/workflows/${w.id}`}
-                  >
-                    Chi tiết
-                  </Link>
-                </div>
-              </article>
+              <WorkflowCard
+                key={w.id}
+                workflow={w}
+                agents={agents.data || []}
+                onTicket={() => setTicketWorkflow(w.id)}
+              />
             ))}
           </div>
         )}
