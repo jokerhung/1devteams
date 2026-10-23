@@ -112,7 +112,7 @@ export default function NotificationsPage() {
           {items.map((n) => (
             <Link
               key={n.id}
-              href={`/projects/${n.project_id}/workflows/${n.workflow_id}/tickets/${n.ticket_id}`}
+              href={`/projects/${n.project_id}/workflows/${n.workflow_id}/tickets/${n.ticket_id}?focus=gate`}
               onClick={() => {
                 send(`/notifications/${n.id}/read`)
                   .then(() =>

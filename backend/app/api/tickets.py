@@ -72,6 +72,19 @@ async def new_ticket(wid: UUID, body: TicketCreate, request: Request, db: DB, us
     workflow = await authorized_workflow(db, wid, user)
     await require_project(db, workflow.project_id, user, report=True)
     ticket = await create_ticket(db, workflow, body, user.id)
+    await db.flush()
+    from app.services.ticket_service import add_message
+
+    await add_message(
+        db,
+        ticket.id,
+        content=body.description or body.title,
+        sender_type="USER",
+        sender_id=user.id,
+        sender_name=user.display_name,
+        event_type="message_chunk",
+        metadata={"initial": True},
+    )
     await commit(db)
     runner = getattr(request.app.state, "ticket_runner", None)
     if body.auto_start and runner is not None:
@@ -159,6 +172,7 @@ async def logs(
             "kind": row.event_type,
             "text": row.content,
             "at": row.created_at,
+            "metadata": row.event_metadata,
         }
         for row in rows
     ]
@@ -174,7 +188,14 @@ async def start_ticket(tid: UUID, request: Request, user: CurrentUser):
 
 
 @router.post("/tickets/{tid}/reply")
-async def reply_ticket(tid: UUID, body: Reply, request: Request, user: CurrentUser):
+async def reply_ticket(tid: UUID, body: Reply, request: Request, db: DB, user: CurrentUser):
+    if body.client_msg_id or body.attachment_ids:
+        ticket = await authorized_ticket(db, tid, user, report=True)
+        existing = await db.get(TicketMessage, str(body.client_msg_id)) if body.client_msg_id else None
+        if ticket.status != "WAITING_USER_INPUT" and existing is None:
+            fail(409, "Ticket không chờ câu trả lời", "invalid_ticket_status")
+        value = await send_message(tid, ChatMessage(**body.model_dump()), request, db, user)
+        return {"accepted": True, "message": value}
     await request.app.state.ticket_runner.reply(str(tid), body.text, user)
     return {"accepted": True}
 
@@ -204,6 +225,30 @@ async def ticket_state(tid: UUID, request: Request, db: DB, user: CurrentUser):
     return await request.app.state.ticket_runner.state(str(tid))
 
 
+@router.get("/tickets/{tid}/chat-config")
+async def chat_config(tid: UUID, request: Request, db: DB, user: CurrentUser):
+    from app.db.models import Project, ProjectMember
+
+    ticket = await authorized_ticket(db, tid, user)
+    project = await db.get(Project, ticket.project_id)
+    assert project is not None
+    role = await db.scalar(
+        select(ProjectMember.project_role).where(
+            ProjectMember.project_id == ticket.project_id,
+            ProjectMember.member_type == "USER",
+            ProjectMember.member_id == user.id,
+        )
+    )
+    admin = user.system_role in {"OWNER", "ADMIN"} or project.owner_id == user.id
+    settings = request.app.state.settings
+    return {
+        "max_files": settings.attach_max_files,
+        "max_mb": settings.attach_max_mb,
+        "can_report": admin or role in {"REPORTER", "MAINTAINER"},
+        "can_confirm": admin or role == "MAINTAINER",
+    }
+
+
 @router.post("/tickets/{tid}/messages", response_model=MessageOut, status_code=201)
 async def send_message(tid: UUID, body: ChatMessage, request: Request, db: DB, user: CurrentUser):
     import asyncio
@@ -218,6 +263,14 @@ async def send_message(tid: UUID, body: ChatMessage, request: Request, db: DB, u
 
     ticket = await authorized_ticket(db, tid, user, report=True)
     status = ticket.status
+    if body.client_msg_id:
+        previous = await db.get(TicketMessage, str(body.client_msg_id))
+        if previous:
+            if previous.ticket_id != str(tid) or previous.sender_id != user.id:
+                fail(409, "ID tin nhắn đã được sử dụng", "message_conflict")
+            return message_event(previous)
+    if status in {"COMPLETED", "CANCELLED"}:
+        fail(409, "Ticket đã kết thúc", "invalid_ticket_status")
     message = await add_message(
         db,
         str(tid),
@@ -226,6 +279,8 @@ async def send_message(tid: UUID, body: ChatMessage, request: Request, db: DB, u
         sender_id=user.id,
         sender_name=user.display_name,
         event_type="message_chunk",
+        metadata={"client_msg_id": str(body.client_msg_id)} if body.client_msg_id else {},
+        message_id=str(body.client_msg_id) if body.client_msg_id else None,
     )
     ids = [str(i) for i in body.attachment_ids]
     await attach_to_message(db, str(tid), message.id, ids, user.id, request.app.state.settings)
@@ -255,10 +310,12 @@ async def send_message(tid: UUID, body: ChatMessage, request: Request, db: DB, u
                     "id": item.id,
                     "filename": item.filename,
                     "mime": item.mime,
+                    "size": item.size,
+                    "url": f"/api/attachments/{item.id}",
                     "path": str(destination.relative_to(git.workspace)),
                 }
             )
-        message.event_metadata = {"attachments": info}
+        message.event_metadata = {**message.event_metadata, "attachments": info}
     await commit(db)
     value = message_event(message)
     await request.app.state.event_bus.broadcast(f"tickets/{tid}", value)

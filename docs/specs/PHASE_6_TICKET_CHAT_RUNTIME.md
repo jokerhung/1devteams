@@ -143,7 +143,9 @@ Khi `release` về: AgentTurn của `@leader` có TerminalBlock các lệnh git 
 ## 8. Definition of Done
 - [ ] Chạy E2E thật (Claude Code/Codex thật) trên bản copy `HNBG_DEV` đạt đủ 6 bước ở IMPLEMENTATION_PLAN §7.
 - [ ] Độ trễ hiển thị chunk < 300ms từ lúc backend nhận.
-- [ ] Giao diện khớp mockup `view-chat` (so screenshot): log gắn từng turn (dòng cuối + mũi tên), nút @ popup, nút 📎 bên phải nút @, thẻ file chờ gửi.
-- [ ] Agent mặc định của nút @ được nhớ qua ticket, qua project và sau khi tải lại trang.
-- [ ] Đính kèm: 3 cách thêm, giới hạn 5 file/10MB, agent nhận được đường dẫn file trong prompt.
-- [ ] Mở 2 tab trình duyệt cùng ticket → cả 2 đồng bộ realtime; confirm ở tab 1 → tab 2 ẩn nút.
+- [x] Giao diện khớp mockup `view-chat` (so screenshot): log gắn từng turn (dòng cuối + mũi tên), nút @ popup, nút 📎 bên phải nút @, thẻ file chờ gửi.
+- [x] Agent mặc định của nút @ được nhớ qua ticket, qua project và sau khi tải lại trang.
+- [x] Đính kèm: 3 cách thêm, giới hạn 5 file/10MB, agent nhận được đường dẫn file trong prompt.
+- [x] Mở 2 tab trình duyệt cùng ticket → cả 2 đồng bộ realtime; confirm ở tab 1 → tab 2 ẩn nút.
+
+Kết quả triển khai và hai điều kiện nghiệm thu còn mở: [PHASE_6_IMPLEMENTATION_NOTES.md](PHASE_6_IMPLEMENTATION_NOTES.md).

@@ -45,12 +45,12 @@ def test_ws_replay_live_actions_and_project_channel(tmp_path):
             tid = ticket["id"]
             for content in ["first", "second", "third"]:
                 client.post(f"/api/tickets/{tid}/messages", json={"text": content})
-            with client.websocket_connect(f"/ws/tickets/{tid}?after_seq=1") as ws:
+            with client.websocket_connect(f"/ws/tickets/{tid}?after_seq=2") as ws:
                 ws.send_json({"token": token})
                 assert ws.receive_json()["state"]["status"] == "OPEN"
                 assert [ws.receive_json()["data"]["content"] for _ in range(2)] == ["second", "third"]
                 client.post(f"/api/tickets/{tid}/messages", json={"text": "fourth"})
-                assert ws.receive_json()["data"]["seq"] == 4
+                assert ws.receive_json()["data"]["seq"] == 5
                 ws.send_json({"type": "action", "action": "cancel"})
                 for _ in range(20):
                     frame = ws.receive_json()
@@ -77,7 +77,7 @@ async def test_slow_consumer_and_persisted_sequence(engine_client):
             *(bus.publish(channel, {"event_type": "log", "content": str(i)}) for i in range(20))
         )
         events = [queue.get_nowait() for _ in range(20)]
-        assert [e["seq"] for e in events] == list(range(1, 21))
+        assert [e["seq"] for e in events] == list(range(2, 22))
     simple = EventBus()
     async with simple.subscribe("slow") as queue:
         for i in range(1001):

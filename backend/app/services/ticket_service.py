@@ -95,6 +95,7 @@ async def add_message(
     metadata=None,
     run_id=None,
     node_id=None,
+    message_id=None,
 ):
     seq = await db.scalar(
         update(Ticket)
@@ -105,6 +106,7 @@ async def add_message(
     if seq is None:
         fail(404, "Không tìm thấy ticket", "not_found")
     message = TicketMessage(
+        **({"id": message_id} if message_id else {}),
         ticket_id=ticket_id,
         seq=seq,
         content=content,

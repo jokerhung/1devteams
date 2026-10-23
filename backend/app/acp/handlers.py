@@ -56,9 +56,11 @@ class ClientRequestHandlers:
             )
         )
 
-    async def enforce(self, decision: Decision) -> None:
+    async def enforce(self, decision: Decision, action: str = "tool") -> None:
         if not decision.allowed:
-            await self.event("permission", decision.reason, allowed=False, reason=decision.reason)
+            await self.event(
+                "permission", decision.reason, allowed=False, reason=decision.reason, action=action
+            )
             raise RPCError(-32001, f"Permission denied: {decision.reason}")
 
     async def handle(self, method: str, params: Json) -> Json:
@@ -104,7 +106,10 @@ class ClientRequestHandlers:
             )
             return {}
         if method == "terminal/create":
-            await self.enforce(self.guard.check_command(params["command"], params.get("args")))
+            await self.enforce(
+                self.guard.check_command(params["command"], params.get("args")),
+                " ".join([params["command"], *(params.get("args") or [])]),
+            )
             cwd = self.guard.resolve_path(params.get("cwd") or str(self.guard.workspace))
             limit = int(params.get("outputByteLimit", 1024 * 1024))
             if limit < 0:

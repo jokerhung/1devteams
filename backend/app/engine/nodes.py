@@ -66,6 +66,18 @@ async def gate(
             events=ctx.events,
         )
     counts[nid] = seq
+    await ctx.emit(
+        "gate_resolved",
+        node_id=nid,
+        metadata={
+            "gate_key": key,
+            "kind": kind,
+            "approved": answer.get("approved"),
+            "feedback": answer.get("feedback", ""),
+            "text": answer.get("text", ""),
+            "user": answer.get("user"),
+        },
+    )
     return answer, counts
 
 
@@ -132,7 +144,11 @@ async def stream_turn(
                     if event.metadata.get("turn_interrupted") or session.turn_interrupted:
                         raise RuntimeError("Agent restarted during turn")
                     files.update(event.metadata.get("modified_files", []))
-                    await emit("log", "✔ stopReason=" + str(event.metadata.get("stop_reason", "end_turn")))
+                    await emit(
+                        "log",
+                        "✔ stopReason=" + str(event.metadata.get("stop_reason", "end_turn")),
+                        event.metadata,
+                    )
                 else:
                     await emit(event.event_type, event.content, event.metadata)
             pending = asyncio.ensure_future(anext(iterator))
@@ -169,7 +185,7 @@ async def agent_turn(
             sender_name=cfg.handle,
             node_id=node.id,
             run_id=run_id,
-            metadata={"model": cfg.model},
+            metadata={"model": cfg.model, "runtime": cfg.runtime},
         )
         session: AgentSession | None = None
         try:
@@ -341,6 +357,8 @@ def make_node(node: Node, agents: dict[str, AgentRuntimeConfig]) -> Callable[...
             payload: dict[str, Any] = {
                 "message": node.data.get("message", "Xác nhận bản sửa lỗi"),
                 "modified_files": state.get("modified_files", []),
+                "approved_label": node.data.get("approved_label"),
+                "rejected_label": node.data.get("rejected_label"),
             }
             if node.type == "human_input":
                 payload["question"] = (

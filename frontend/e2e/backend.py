@@ -1,5 +1,7 @@
 """Isolated real backend for management browser verification; never uses local .env or DB."""
 import os
+import json
+from contextlib import asynccontextmanager
 from pathlib import Path
 import subprocess
 import sys
@@ -31,4 +33,32 @@ settings = Settings(
     allowed_workspace_roots=str(data),
     cors_origins="http://127.0.0.1:3062",
 )
-uvicorn.run(create_app(settings), host="127.0.0.1", port=int(os.environ.get("E2E_BACKEND_PORT", "8062")))
+app = create_app(settings)
+if os.environ.get("ACP_FAKE_SCENARIO") == "bugfix_happy_path":
+    from fake_acp import factory
+
+    chat = data / f"chat-workspace-{uuid4().hex}"
+    chat.mkdir()
+    remote = data / f"chat-remote-{uuid4().hex}.git"
+    def git(*args):
+        subprocess.run(["git", *args], cwd=chat, check=True, capture_output=True)
+    git("init", "-b", "develop")
+    git("config", "user.email", "browser@example.com")
+    git("config", "user.name", "Browser Test")
+    (chat / "app.txt").write_text("Excel export broken\n")
+    git("add", "app.txt")
+    git("commit", "-m", "chore: browser fixture")
+    git("init", "--bare", str(remote))
+    git("remote", "add", "origin", str(remote))
+    git("push", "origin", "develop")
+    (data / "runtime.json").write_text(json.dumps({"workspace": str(chat), "remote": str(remote)}))
+    original = app.router.lifespan_context
+
+    @asynccontextmanager
+    async def lifespan(instance):
+        async with original(instance):
+            instance.state.acp_pool.factory = factory
+            yield
+
+    app.router.lifespan_context = lifespan
+uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("E2E_BACKEND_PORT", "8062")))

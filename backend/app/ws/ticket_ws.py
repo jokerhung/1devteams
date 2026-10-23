@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import suppress
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
@@ -149,7 +150,8 @@ async def channel_socket(socket: WebSocket, identifier: str, ticket_channel: boo
     except WebSocketDisconnect:
         pass
     except (ValueError, HTTPException, TimeoutError):
-        await socket.close(1008)
+        with suppress(WebSocketDisconnect, RuntimeError):
+            await socket.close(1008)
     finally:
         tasks = [t for t in [receive_task, event_task] if t is not None]
         for task in tasks:

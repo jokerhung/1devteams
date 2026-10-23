@@ -44,6 +44,8 @@ async def get_logo(identifier: UUID, request: Request, user: CurrentUser):
 @router.post("/tickets/{tid}/attachments", response_model=AttachmentOut, status_code=201)
 async def upload_attachment(tid: UUID, file: UploadFile, request: Request, db: DB, user: CurrentUser) -> dict:
     ticket = await authorized_ticket(db, tid, user, report=True)
+    if ticket.status in {"COMPLETED", "CANCELLED"}:
+        fail(409, "Ticket đã kết thúc", "invalid_ticket_status")
     row = await store_attachment(db, ticket, file, user.id, request.app.state.settings)
     return {
         "id": row.id,
@@ -72,3 +74,19 @@ async def attachment(identifier: UUID, request: Request, db: DB, user: CurrentUs
         filename=f"{row.filename}.png" if thumbnail else row.filename,
         headers={"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox"},
     )
+
+
+@router.delete("/attachments/{identifier}", status_code=204)
+async def delete_pending_attachment(identifier: UUID, request: Request, db: DB, user: CurrentUser):
+    row = await record(db, Attachment, identifier)
+    await authorized_ticket(db, row.ticket_id, user, report=True)
+    if row.uploaded_by != user.id or row.message_id:
+        fail(409, "Chỉ gỡ tệp chờ gửi của bạn", "attachment_in_use")
+    paths = [row.storage_path, row.thumbnail_path]
+    await db.delete(row)
+    await db.commit()
+    for name in paths:
+        if name:
+            path = await asyncio.to_thread(Path(name).resolve)
+            if path.is_relative_to(request.app.state.settings.data_dir.resolve()):
+                await asyncio.to_thread(path.unlink, missing_ok=True)

@@ -363,6 +363,8 @@ class TicketRunner:
             waiting = None
         return {
             "status": ticket.status,
+            "last_seq": ticket.next_message_seq - 1,
+            "result": ticket.result,
             "current_node_id": ticket.current_node_id,
             "waiting": waiting,
             "node_statuses": statuses,

@@ -314,7 +314,7 @@ test("notifications and sidebar count refetch when backend resolves notification
   resolved = true;
   await act(async () => {
     onmessage!({
-      data: JSON.stringify({ event_type: "notification_resolved" }),
+      data: JSON.stringify({ channel: "users/me", event_type: "notification_resolved" }),
     });
   });
   await screen.findByText("Không có gì cần xử lý 🎉");

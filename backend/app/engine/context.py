@@ -59,7 +59,12 @@ class RunContext:
             workflow_id = ticket.workflow_id
         await self.emit(
             "ticket_status",
-            metadata={"status": status, "current_node_id": node_id, "workflow_id": workflow_id},
+            metadata={
+                "status": status,
+                "current_node_id": node_id,
+                "workflow_id": workflow_id,
+                **({"result": result} if result is not None else {}),
+            },
         )
         await self.events.publish(
             f"projects/{self.project_id}",

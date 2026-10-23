@@ -11,7 +11,6 @@ import {
   ErrorState,
   Loading,
   PageHeader,
-  StatusBadge,
   statuses,
 } from "./primitives";
 import { TicketTable } from "./project-pages";
@@ -94,43 +93,6 @@ export function WorkflowOverview({ pid, wid }: { pid: string; wid: string }) {
           onClose={() => setCreate(false)}
         />
       )}
-    </>
-  );
-}
-export function TicketPlaceholder({
-  pid,
-  wid,
-  tid,
-}: {
-  pid: string;
-  wid: string;
-  tid: string;
-}) {
-  const ticket = useQuery({
-    queryKey: ["ticket", tid],
-    queryFn: () => apiFetch<Ticket>(`/tickets/${tid}`),
-    refetchInterval: 5000,
-  });
-  if (ticket.isLoading) return <Loading />;
-  if (!ticket.data) return <ErrorState error={ticket.error} />;
-  return (
-    <>
-      <PageHeader
-        title={`${ticket.data.code} · ${ticket.data.title}`}
-        description={ticket.data.description}
-      >
-        <StatusBadge status={ticket.data.status} />
-        <Link
-          className="btn btn-light"
-          href={`/projects/${pid}/workflows/${wid}`}
-        >
-          Về workflow
-        </Link>
-      </PageHeader>
-      <EmptyState>
-        Cửa sổ chat đầy đủ sẽ được triển khai ở Phase 6. Ticket đã được lưu và
-        có thể chạy từ backend.
-      </EmptyState>
     </>
   );
 }

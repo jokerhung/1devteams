@@ -168,7 +168,7 @@ test("real backend: manage agents, teams, empty projects, members, published wor
   await dialog.getByLabel("Chỉ tạo, chưa chạy").check();
   await dialog.getByRole("button", { name: "Tạo & mở chat" }).click();
   await expect(page).toHaveURL(/\/workflows\/[a-f0-9-]+\/tickets\/[a-f0-9-]+$/);
-  await expect(page.getByText(/Cửa sổ chat đầy đủ/)).toBeVisible();
+  await expect(page.getByTestId("ticket-channel")).toBeVisible();
   await page
     .getByRole("button", { name: "Mở workflow Fix Bug", exact: true })
     .click();

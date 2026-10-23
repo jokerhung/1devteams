@@ -7,10 +7,31 @@ import sys
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from app.acp.guard import DynamicPermissionGuard
 from app.acp.process import stop_process
 from app.acp.types import PermissionProfile
+
+
+def commit_web_url(remote_url: str, sha: str) -> str | None:
+    if not re.fullmatch(r"[a-f0-9]{40,64}", sha):
+        return None
+    value = remote_url.strip()
+    if value.startswith("git@") and ":" in value:
+        host, path = value[4:].split(":", 1)
+    else:
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"https", "ssh"} or parsed.query or parsed.fragment:
+            return None
+        host, path = parsed.hostname or "", parsed.path.lstrip("/")
+    if host not in {"github.com", "gitlab.com"}:
+        return None
+    path = path.removesuffix(".git").strip("/")
+    if len(path.split("/")) < 2 or not re.fullmatch(r"[\w.-]+(?:/[\w.-]+)+", path):
+        return None
+    suffix = "commit" if host == "github.com" else "-/commit"
+    return f"https://{host}/{path}/{suffix}/{sha}"
 
 
 def safe_release_path(name: str) -> bool:
@@ -44,8 +65,15 @@ class GitService:
             "add",
             "commit",
             "push",
+            "remote",
         }:
             raise ValueError("Git operation not permitted")
+        if args[0] == "remote" and (
+            len(args) != 3
+            or args[1] != "get-url"
+            or not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", args[2])
+        ):
+            raise ValueError("Only reading a named remote is permitted")
         if any(a in {"--force", "-f", "--hard"} for a in args):
             raise ValueError("Unsafe git option")
         if args[0] == "push" and (len(args) != 3 or any(a.startswith("-") for a in args[1:])):
@@ -98,7 +126,7 @@ class GitService:
             raise
         output = (stdout + stderr).decode("utf-8", "replace")
         output = re.sub(r"(https?://)[^/@\s]+@", r"\1[redacted]@", output)
-        if self.emit:
+        if self.emit and args[0] != "remote":
             # Porcelain -z is parsed below; PostgreSQL text columns cannot store NUL bytes.
             log_output = output.replace("\x00", "\n")
             command = "git " + " ".join(args)
@@ -227,7 +255,9 @@ class GitService:
         if (await self.run("rev-parse", "--abbrev-ref", "HEAD")).strip() != branch:
             raise ValueError("Branch changed before push; local commit preserved")
         output = await self.run("push", remote, branch)
+        commit_url = commit_web_url(await self.run("remote", "get-url", remote), full)
         return {
+            **({"commit_url": commit_url} if commit_url else {}),
             "commit_hash": full[:7],
             "commit_hash_full": full,
             "branch": branch,

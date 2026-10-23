@@ -62,7 +62,7 @@ async def test_concurrent_ticket_counter_and_message_resume(client):
         )
         await add_message(db, tickets[0]["id"], content="Second", event_type="log")
         await db.commit()
-    messages = (await client.get(f"/api/tickets/{tickets[0]['id']}/messages?after_seq=1")).json()
+    messages = (await client.get(f"/api/tickets/{tickets[0]['id']}/messages?after_seq=2")).json()
     assert [message["content"] for message in messages] == ["Second"]
     logs = (await client.get(f"/api/tickets/{tickets[0]['id']}/logs?agent=@tester")).json()
     assert len(logs) == 1 and logs[0]["kind"] == "thought_chunk"

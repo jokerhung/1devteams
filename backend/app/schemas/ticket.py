@@ -60,6 +60,7 @@ class LogOut(Input):
     kind: str
     text: str
     at: datetime
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AttachmentOut(Input):
@@ -73,6 +74,8 @@ class AttachmentOut(Input):
 
 class Reply(Input):
     text: str = Field(min_length=1, max_length=100000)
+    client_msg_id: UUID | None = None
+    attachment_ids: list[UUID] = Field(default_factory=list, max_length=5)
 
 
 class Confirm(Input):
@@ -81,6 +84,7 @@ class Confirm(Input):
 
 
 class ChatMessage(Input):
+    client_msg_id: UUID | None = None
     text: str = Field(default="", max_length=100000)
     attachment_ids: list[UUID] = Field(default_factory=list, max_length=5)
 

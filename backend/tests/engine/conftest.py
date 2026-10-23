@@ -66,6 +66,9 @@ class ScriptedSession:
             if value == "ERROR":
                 raise RuntimeError("scripted failure")
             if self.cfg.permission_profile.allow_write:
+                old_text = (
+                    (self.workspace / "app.txt").read_text() if (self.workspace / "app.txt").exists() else ""
+                )
                 (self.workspace / "app.txt").write_text(
                     f"repair {len(self.factory.prompts[self.cfg.handle])}\n"
                 )
@@ -86,6 +89,15 @@ class ScriptedSession:
                     pass
                 for event in events:
                     yield event
+                yield ACPStreamEvent(
+                    agent_handle=self.cfg.handle,
+                    event_type="file_edit",
+                    metadata={
+                        "path": "app.txt",
+                        "old_text": old_text,
+                        "new_text": (self.workspace / "app.txt").read_text(),
+                    },
+                )
             # Split chunks to exercise aggregation and marker parsing.
             for offset in range(0, len(value), 13):
                 yield ACPStreamEvent(

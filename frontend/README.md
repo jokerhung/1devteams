@@ -8,7 +8,8 @@ Ports are configurable in the root `.env`.
 
 The workspace includes login, Agents & Teams, projects/settings/members, notifications,
 workflow wizard, React Flow canvas, pipeline, draft validation/publishing, independent
-workflow lifecycle and ticket creation. Full ticket chat belongs to Phase 6.
+workflow lifecycle, ticket creation and runtime chat with streaming turns/logs, diffs,
+attachments, mentions, human gates, reconnect/replay and workflow snapshot progress.
 
 Auth uses a same-origin server proxy with an httpOnly JWT cookie. `BACKEND_URL` can set
 the server-side backend address; it falls back to `NEXT_PUBLIC_API_URL` then port 8060.
@@ -33,4 +34,5 @@ Prepare `backend/.venv` first. On Linux it uses `.venv/bin/python`; on Windows
 
 See [Phase 4 implementation notes](../docs/specs/PHASE_4_IMPLEMENTATION_NOTES.md)
 and [Phase 5 implementation notes](../docs/specs/PHASE_5_IMPLEMENTATION_NOTES.md)
-for details and verification results.
+and [Phase 6 implementation notes](../docs/specs/PHASE_6_IMPLEMENTATION_NOTES.md)
+for details and verification results, including the remaining native ACP acceptance gate.

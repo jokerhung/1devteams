@@ -263,10 +263,12 @@ export function Modal({
   title,
   children,
   onClose,
+  wide = false,
 }: {
   title: string;
   children: React.ReactNode;
   onClose: () => void;
+  wide?: boolean;
 }) {
   return (
     <Dialog.Root
@@ -277,7 +279,9 @@ export function Modal({
     >
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 z-40 bg-stone-900/25 backdrop-blur-[2px]" />
-        <Dialog.Popup className="fixed top-1/2 left-1/2 z-50 max-h-[90dvh] w-[min(640px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-stone-200 bg-white p-6 shadow-xl">
+        <Dialog.Popup
+          className={`fixed top-1/2 left-1/2 z-50 max-h-[90dvh] ${wide ? "w-[min(1024px,calc(100vw-32px))]" : "w-[min(640px,calc(100vw-32px))]"} -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-stone-200 bg-white p-6 shadow-xl`}
+        >
           <div className="mb-5 flex items-center justify-between">
             <Dialog.Title className="text-base font-bold">{title}</Dialog.Title>
             <Dialog.Close aria-label="Đóng" className="rounded p-1">

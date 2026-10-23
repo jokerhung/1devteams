@@ -19,6 +19,7 @@ export function CreateTicketDialog({
   const client = useQueryClient();
   const [files, setFiles] = useState<File[]>([]);
   const [autoStart, setAutoStart] = useState(true);
+  const [uploaded, setUploaded] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [created, setCreated] = useState<{
@@ -64,18 +65,31 @@ export function CreateTicketDialog({
                 },
               ));
             setCreated(result);
+            client.setQueryData(["ticket", result.ticket.id], result.ticket);
+            const attachmentIds = [...uploaded];
             if (files.length) {
               const remaining = [...files];
               while (remaining.length) {
                 const body = new FormData();
                 body.append("file", remaining[0]);
-                await apiFetch(`/tickets/${result.ticket.id}/attachments`, {
-                  method: "POST",
-                  body,
-                });
+                const attachment = await apiFetch<{ id: string }>(
+                  `/tickets/${result.ticket.id}/attachments`,
+                  {
+                    method: "POST",
+                    body,
+                  },
+                );
+                attachmentIds.push(attachment.id);
+                setUploaded([...attachmentIds]);
                 remaining.shift();
                 setFiles([...remaining]);
               }
+            }
+            if (attachmentIds.length) {
+              await send(`/tickets/${result.ticket.id}/messages`, {
+                attachment_ids: attachmentIds,
+              });
+              setUploaded([]);
             }
             if (autoStart && (created || files.length)) {
               const latest = await apiFetch<Ticket>(
