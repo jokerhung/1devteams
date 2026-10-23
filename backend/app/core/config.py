@@ -24,7 +24,12 @@ class Settings(BaseSettings):
     codex_acp_bin: str = "codex-acp"
     allowed_workspace_roots: str = r"D:\VETC"
     acp_prompt_timeout_sec: int = Field(default=1800, gt=0)
-    cors_origins: str = "http://localhost:3000"
+    max_acp_processes: int = Field(default=6, gt=0)
+    max_api_concurrency: int = Field(default=8, gt=0)
+    api_max_context_chars: int = Field(default=100_000, gt=0)
+    api_allowed_http_hosts: str = "localhost,127.0.0.1"
+    api_allowed_private_hosts: str = ""
+    cors_origins: str = "http://localhost:3060"
 
     @property
     def workspace_roots(self) -> list[Path]:

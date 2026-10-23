@@ -1,5 +1,7 @@
 # aiTeams
 
+Phase 1 ACP/API bridge: [implementation, usage and verification status](docs/specs/PHASE_1_IMPLEMENTATION_NOTES.md).
+
 Khung monorepo Phase 0: FastAPI + Next.js 15 và harness xác minh ACP thật trên Windows.
 Chưa triển khai nghiệp vụ, database schema hoặc giao diện quản lý của các phase sau.
 
@@ -11,6 +13,7 @@ Yêu cầu Python 3.11+ (đã kiểm tra với 3.12), uv, Node.js 22+ và npm.
 npm ci
 uv sync --project backend --python 3.12
 npm --prefix frontend ci
+Copy-Item .env.example .env
 Copy-Item backend/.env.example backend/.env
 Copy-Item frontend/.env.example frontend/.env.local
 ```
@@ -21,14 +24,30 @@ có mặc định trong file mẫu. `ALLOWED_WORKSPACE_ROOTS` phân cách bằng
 
 ```powershell
 .\scripts\dev.ps1
+# Install/sync backend virtual environment and frontend dependencies, then start:
+.\scripts\dev.ps1 -Setup
 # Hoặc: npm run dev
 # Kiểm tra startup rồi tự dừng cả hai dịch vụ:
 .\scripts\dev.ps1 -SmokeTest
 ```
 
-- Frontend: http://localhost:3000 — trang health có nút kiểm tra lại, loading và lỗi kết nối.
-- Backend: http://localhost:8000/api/health — `{"status":"ok","acp":{"claude":true,"codex":true}}`.
-- Swagger: http://localhost:8000/docs.
+`scripts/dev.ps1` runs the backend with `backend/.venv/Scripts/python.exe` directly;
+manual virtual environment activation is not required. Logs are written to `.dev-logs/`.
+Press Ctrl+C to stop both services. `-SmokeTest` checks both URLs and then stops them.
+
+Đổi cổng trong `.env` tại thư mục gốc repo rồi chạy lại script:
+
+```dotenv
+FRONTEND_PORT=3060
+BACKEND_PORT=8060
+```
+
+Script tự đặt `NEXT_PUBLIC_API_URL` theo cổng backend và thêm địa chỉ frontend vào CORS.
+Biến môi trường của tiến trình được ưu tiên hơn `.env`. Backend vẫn dùng virtual environment.
+
+- Frontend: http://localhost:3060 — trang health có nút kiểm tra lại, loading và lỗi kết nối.
+- Backend: http://localhost:8060/api/health — `{"status":"ok","acp":{"claude":true,"codex":true}}`.
+- Swagger: http://localhost:8060/docs.
 
 Script dừng cả process tree khi Ctrl+C hoặc khi một dịch vụ thoát. Không dùng Uvicorn
 `--reload` trên Windows để giữ ProactorEventLoop cho subprocess ACP.

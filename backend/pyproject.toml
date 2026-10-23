@@ -11,7 +11,8 @@ dependencies = [
   "pydantic>=2.10,<3", "pydantic-settings>=2.7,<3",
   "sqlalchemy[asyncio]>=2.0,<3", "aiosqlite>=0.20,<1", "asyncpg>=0.30,<1",
   "alembic>=1.14,<2", "langgraph>=1,<2", "langgraph-checkpoint-sqlite>=3,<4",
-  "python-jose[cryptography]>=3.4,<4", "passlib[bcrypt]>=1.7,<2", "pyyaml>=6,<7"
+  "python-jose[cryptography]>=3.4,<4", "passlib[bcrypt]>=1.7,<2", "pyyaml>=6,<7",
+  "httpx>=0.28,<1"
 ]
 
 [dependency-groups]
@@ -30,6 +31,7 @@ select = ["E", "F", "I", "UP", "B", "ASYNC"]
 [tool.ruff.lint.per-file-ignores]
 # Small synchronous file operations and per-request timeouts are intentional in the diagnostic harness.
 "scripts/acp_spike.py" = ["ASYNC109", "ASYNC240"]
+"app/acp/jsonrpc.py" = ["ASYNC109"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -44,3 +46,5 @@ strict = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "-m 'not real_acp and not real_api'"
+markers = ["real_acp: opt-in live CLI tests in disposable workspaces", "real_api: opt-in live OpenAI-compatible API tests"]

@@ -1,1 +1,1 @@
-"""ACP bridge implementation follows in Phase 1; see scripts/acp_spike.py."""
+"""ACP and text-only API sessions, permission handlers and ticket-scoped pooling."""

@@ -18,3 +18,4 @@ spike_logs/
 !.env.example
 !.env.*.example
 *.log
+.dev-logs/

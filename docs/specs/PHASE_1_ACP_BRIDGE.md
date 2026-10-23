@@ -212,8 +212,11 @@ App FastAPI nhỏ giả `/v1/chat/completions` (SSE: chunk nội dung, `usage`, 
 | `test_pool.py::test_restart_api_agent` | `restart_agent` xoá history RAM, lượt sau là prompt “lượt đầu” |
 
 ## 5. Definition of Done
+
+Trạng thái triển khai và bằng chứng kiểm thử: [PHASE_1_IMPLEMENTATION_NOTES.md](PHASE_1_IMPLEMENTATION_NOTES.md).
+DoD chưa hoàn tất: cần xác minh Claude/API thật và cơ chế kiểm soát công cụ native.
 - [ ] Tất cả test (trừ `real_acp`) pass trên Windows và Linux CI.
 - [ ] `pytest -m real_acp` pass trên máy dev có CLI đã login (chạy trên thư mục sandbox copy).
-- [ ] Không có chỗ nào hard-code tên 4 role trong `app/acp/` — mọi quyết định dựa trên `PermissionProfile`.
-- [ ] Log mọi quyết định guard (agent, action, allowed, reason) ở mức INFO.
+- [x] Không có chỗ nào hard-code tên 4 role trong `app/acp/` — mọi quyết định dựa trên `PermissionProfile`.
+- [x] Log mọi quyết định guard (agent, action, allowed, reason) ở mức INFO.
 - [ ] Agent `openai-api` chạy được với fake OpenAI server và với một endpoint tương thích thật (OpenAI/OpenRouter/Ollama); không rò API key; chặn SSRF.

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, Check, CircleAlert, Loader2, RefreshCw, Terminal, Unplug } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getHealth, type HealthResponse } from "@/lib/api";
+import { API_URL, getHealth, type HealthResponse } from "@/lib/api";
 
 export default function Home() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -72,7 +72,7 @@ export default function Home() {
 
           <section className="mt-9 rounded-xl border border-stone-200" aria-label="Trạng thái dịch vụ">
             {[
-              { name: "FastAPI Backend", detail: "/api/health · localhost:8000", ready: health?.status === "ok" },
+              { name: "FastAPI Backend", detail: `${API_URL}/api/health`, ready: health?.status === "ok" },
               { name: "Claude Code", detail: "claude-agent-acp", ready: health?.acp.claude },
               { name: "OpenAI Codex", detail: "codex-acp", ready: health?.acp.codex },
             ].map(({ name, detail, ready }) => (
@@ -85,7 +85,7 @@ export default function Home() {
               </div>
             ))}
           </section>
-          {error && <div role="alert" className="mt-4 flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-xs leading-5 text-rose-700"><CircleAlert className="mt-0.5 size-4 shrink-0" /><div>Không kết nối được backend. Kiểm tra dịch vụ ở cổng 8000.<br /><span className="font-mono">{error}</span></div></div>}
+          {error && <div role="alert" className="mt-4 flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-xs leading-5 text-rose-700"><CircleAlert className="mt-0.5 size-4 shrink-0" /><div>Không kết nối được backend. Kiểm tra dịch vụ tại {API_URL}.<br /><span className="font-mono">{error}</span></div></div>}
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
             <p className="text-[11px] text-stone-400">{updatedAt ? `Kiểm tra lần cuối lúc ${updatedAt}` : "Đang chờ phản hồi từ backend"}</p>
             <Button variant="outline" size="sm" disabled={loading} onClick={() => void refresh()}><RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} /> Kiểm tra lại</Button>
