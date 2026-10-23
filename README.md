@@ -1,9 +1,10 @@
 # aiTeams
 
 Phase 1 ACP/API bridge: [implementation, usage and verification status](docs/specs/PHASE_1_IMPLEMENTATION_NOTES.md).
+Phase 2 Database & REST API: [cấu hình đăng nhập, migration và API](docs/specs/PHASE_2_IMPLEMENTATION_NOTES.md).
 
-Khung monorepo Phase 0: FastAPI + Next.js 15 và harness xác minh ACP thật trên Windows.
-Chưa triển khai nghiệp vụ, database schema hoặc giao diện quản lý của các phase sau.
+Monorepo FastAPI + Next.js 15, ACP/API bridge và database/REST API quản trị.
+Workflow engine và giao diện quản lý đầy đủ thuộc các phase tiếp theo.
 
 ## Cài đặt (PowerShell)
 

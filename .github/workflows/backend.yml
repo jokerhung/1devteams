@@ -21,3 +21,29 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run mypy
       - run: uv run pytest
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: isolated-ci-test
+          POSTGRES_DB: aiteams_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      JWT_SECRET: ci-test-only-secret
+      AITEAMS_TEST_POSTGRES_URL: postgresql+asyncpg://postgres:isolated-ci-test@localhost:5432/aiteams_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.12.13'
+      - run: uv sync --frozen --python 3.12
+      - run: uv run pytest tests/api

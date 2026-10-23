@@ -1,0 +1,6 @@
+claude-code:
+  - {id: sonnet, label: "Claude Sonnet"}
+  - {id: opus, label: "Claude Opus"}
+  - {id: haiku, label: "Claude Haiku"}
+codex:
+  - {id: "gpt-6.1-sol[medium]", label: "Codex GPT-6.1 Sol (medium, Phase 0 capture)"}

@@ -26,8 +26,16 @@ async def test_health_reports_binary_availability(claude: bool, codex: bool) -> 
     assert response.headers["access-control-allow-origin"] == "http://localhost:3060"
 
 
-async def test_lifespan_owns_pool_and_closes_on_shutdown():
-    app = create_app(Settings(jwt_secret="test", max_acp_processes=2, max_api_concurrency=3))
+async def test_lifespan_owns_pool_and_closes_on_shutdown(tmp_path):
+    app = create_app(
+        Settings(
+            jwt_secret="test",
+            max_acp_processes=2,
+            max_api_concurrency=3,
+            database_url=f"sqlite+aiosqlite:///{tmp_path / 'health.db'}",
+            data_dir=tmp_path / "data",
+        )
+    )
     async with app.router.lifespan_context(app):
         pool = app.state.acp_pool
         assert pool.events is app.state.event_bus

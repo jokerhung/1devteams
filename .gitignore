@@ -19,3 +19,4 @@ spike_logs/
 !.env.*.example
 *.log
 .dev-logs/
+backend/data/

@@ -373,11 +373,14 @@ AI Team mặc định: **Core Bugfix Squad** = 4 agent trên. Template workflow 
 - `test_attachments.py`: 6 file/tin nhắn → lỗi; file 11MB → lỗi; ảnh có thumbnail; file chưa gắn tin nhắn quá 24h bị dọn.
 
 ## 10. Definition of Done
-- [ ] `alembic upgrade head` tạo đủ bảng trên SQLite và PostgreSQL.
-- [ ] Khởi động server → có 4 agent built-in + team mặc định.
-- [ ] `POST /api/projects` với `D:\VETC\FE\HNBG_DEV` → validate đúng branch hiện tại.
-- [ ] `POST /api/projects/{id}/seed-default` → project có workflow *Fix Bug* `PUBLISHED`, `is_valid=true`.
-- [ ] Tạo project trống (không team/workflow) thành công; `/projects/recent` ổn định theo `last_activity_at`.
-- [ ] Sửa agent → restart đúng; thông báo tạo/resolve đúng theo gate; đính kèm có giới hạn.
-- [ ] Đi đúng thứ tự project → workflow → ticket qua API; mọi đường tắt sai thứ tự (ticket không có workflow, workflow chưa xuất bản) đều bị chặn.
-- [ ] OpenAPI (`/docs`) đầy đủ; frontend Phase 4 sinh type từ OpenAPI (`openapi-typescript`).
+
+Bằng chứng, cấu hình và điểm tích hợp Phase 3: [PHASE_2_IMPLEMENTATION_NOTES.md](PHASE_2_IMPLEMENTATION_NOTES.md).
+
+- [x] `alembic upgrade head` tạo đủ bảng trên SQLite và PostgreSQL.
+- [x] Khởi động server → có 4 agent built-in + team mặc định.
+- [x] `POST /api/projects` với `D:\VETC\FE\HNBG_DEV` → validate đúng branch hiện tại.
+- [x] `POST /api/projects/{id}/seed-default` → project có workflow *Fix Bug* `PUBLISHED`, `is_valid=true`.
+- [x] Tạo project trống (không team/workflow) thành công; `/projects/recent` ổn định theo `last_activity_at`.
+- [x] Sửa agent → restart đúng; thông báo tạo/resolve đúng theo gate; đính kèm có giới hạn.
+- [x] Đi đúng thứ tự project → workflow → ticket qua API; mọi đường tắt sai thứ tự (ticket không có workflow, workflow chưa xuất bản) đều bị chặn.
+- [x] OpenAPI (`/docs`) đầy đủ để frontend Phase 4 sinh type từ OpenAPI (`openapi-typescript`); việc sinh type/giao diện thực hiện ở Phase 4.

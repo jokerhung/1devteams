@@ -61,6 +61,8 @@ class ACPSession:
         self.rpc: JsonRpcConnection | None = None
         self.session_id: str | None = None
         self.model_effective: str | None = None
+        self.runtime_version: str | None = None
+        self.available_models: list[Json] = []
         self.modified_files: set[str] = set()
         self.turn_interrupted = False
         self.busy = False
@@ -127,6 +129,7 @@ class ACPSession:
             )
             if initialized.get("protocolVersion") != 1:
                 raise RPCError(-32602, "Unsupported ACP protocol version")
+            self.runtime_version = initialized.get("agentInfo", {}).get("version")
             params: Json = {"cwd": str(self.workspace), "mcpServers": []}
             if self.cfg.runtime == "claude-code":
                 params["_meta"] = {"systemPrompt": {"append": self.cfg.system_prompt}}
@@ -143,6 +146,9 @@ class ACPSession:
             )
             self.model_effective = session.get("models", {}).get("currentModelId") or config.get(
                 "currentValue"
+            )
+            self.available_models = session.get("models", {}).get("availableModels", []) or config.get(
+                "options", []
             )
             if self.cfg.model:
                 try:

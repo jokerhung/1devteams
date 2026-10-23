@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./aiteams.db"
     checkpoint_db: str = "./checkpoints.db"
     jwt_secret: SecretStr = Field(min_length=1)
+    jwt_expire_minutes: int = Field(default=480, gt=0)
+    app_secret_key: SecretStr | None = None
+    bootstrap_admin_email: str | None = None
+    bootstrap_admin_password: SecretStr | None = None
+    data_dir: Path = BACKEND_ROOT / "data"
+    attach_max_files: int = Field(default=5, gt=0)
+    attach_max_mb: int = Field(default=10, gt=0)
+    attach_allow_scripts: bool = False
     claude_acp_bin: str = "claude-agent-acp"
     codex_acp_bin: str = "codex-acp"
     allowed_workspace_roots: str = r"D:\VETC"
