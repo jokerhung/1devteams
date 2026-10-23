@@ -80,10 +80,23 @@ test("real backend: manage agents, teams, empty projects, members, published wor
     .getByLabel("Tên project", { exact: true })
     .fill("Phase 4 Project");
   await dialog
-    .getByLabel("Đường dẫn thư mục local (ACP Working Directory)")
-    .fill(path.resolve(".e2e-data/workspace"));
+    .getByRole("button", { name: "Chọn thư mục local", exact: true })
+    .click();
+  await dialog
+    .getByRole("button", { name: path.resolve(".e2e-data"), exact: true })
+    .click();
+  await dialog.getByRole("button", { name: "workspace", exact: true }).click();
+  await dialog
+    .getByRole("button", { name: "Chọn thư mục này", exact: true })
+    .click();
+  await expect(
+    dialog.getByLabel("Đường dẫn thư mục local (ACP Working Directory)"),
+  ).toHaveValue(path.resolve(".e2e-data/workspace"));
   await dialog.getByLabel("Nhánh Git").click();
   await expect(dialog.getByText("✔ Git repo", { exact: true })).toBeVisible();
+  await expect(dialog.getByLabel("Nhánh Git", { exact: true })).toHaveValue(
+    "develop",
+  );
   await dialog
     .getByRole("button", { name: "Tạo project", exact: true })
     .click();
@@ -205,14 +218,12 @@ test("real backend: manage agents, teams, empty projects, members, published wor
   await page.getByRole("link", { name: /Agents & Teams/ }).click();
   await page.getByRole("heading", { name: "Agents", exact: true }).waitFor();
   await expect(
-    page
-      .getByRole("article")
-      .filter({
-        has: page.getByRole("heading", {
-          name: "Core Bugfix Squad",
-          exact: true,
-        }),
+    page.getByRole("article").filter({
+      has: page.getByRole("heading", {
+        name: "Core Bugfix Squad",
+        exact: true,
       }),
+    }),
   ).toContainText("4 agent · dùng trong 1 project");
   await page.screenshot({ path: ".e2e-data/agents-verified.png" });
   await page.setViewportSize({ width: 900, height: 800 });

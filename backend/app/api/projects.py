@@ -38,6 +38,49 @@ async def workspace(body: WorkspaceInput, request: Request, user: CurrentUser):
     return await validate_workspace(body.path, request.app.state.settings)
 
 
+@router.get("/browse-workspace")
+async def browse_workspace(request: Request, user: CurrentUser, path: str = "") -> dict[str, Any]:
+    """Browse directories on the backend host, restricted to configured workspace roots."""
+
+    def listing() -> dict[str, Any]:
+        roots = request.app.state.settings.workspace_roots
+        if not path:
+            return {
+                "path": None,
+                "parent": None,
+                "directories": [{"name": str(root), "path": str(root)} for root in roots if root.is_dir()],
+            }
+        folder = Path(path)
+        if not folder.is_absolute():
+            fail(422, "Đường dẫn phải là đường dẫn tuyệt đối", "invalid_workspace")
+        folder = folder.resolve()
+        if not any(folder.is_relative_to(root) for root in roots):
+            fail(403, "Ngoài thư mục cho phép", "invalid_workspace")
+        if not folder.is_dir():
+            fail(404, "Không tìm thấy thư mục", "not_found")
+        directories = []
+        for child in folder.iterdir():
+            try:
+                resolved = child.resolve()
+                if child.is_dir() and any(resolved.is_relative_to(root) for root in roots):
+                    directories.append({"name": child.name, "path": str(resolved)})
+            except OSError:
+                continue
+        parent = folder.parent
+        return {
+            "path": str(folder),
+            "parent": str(parent)
+            if parent != folder and any(parent.is_relative_to(r) for r in roots)
+            else None,
+            "directories": sorted(directories, key=lambda entry: entry["name"].casefold()),
+        }
+
+    try:
+        return await asyncio.to_thread(listing)
+    except OSError:
+        fail(403, "Không đọc được thư mục", "directory_unreadable")
+
+
 @router.get("/recent", response_model=list[ProjectOut])
 async def recent_projects(
     db: DB, user: CurrentUser, limit: int = Query(default=5, ge=1, le=100), pin: UUID | None = None

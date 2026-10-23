@@ -15,6 +15,12 @@
   không cho quyền ghi/terminal/release. Không trả JWT hoặc API key đã lưu về browser.
 - Projects: tạo project trống với đúng ba trường, kiểm tra workspace, tổng quan,
   settings, xoá project, thành viên người dùng/team/agent, agent hiệu lực.
+  Nút icon thư mục cạnh đường dẫn ở form tạo/settings mở bộ duyệt thư mục local
+  trên máy chạy backend; chỉ duyệt trong `ALLOWED_WORKSPACE_ROOTS`, có về gốc,
+  lên thư mục cha và chọn thư mục hiện tại. Chọn xong tự điền đường dẫn tuyệt đối.
+  Nhánh Git tự điền theo nhánh hiện tại khi kiểm tra workspace, cho phép sửa tay;
+  đổi thư mục sẽ nhận lại nhánh của thư mục mới. Nếu không xác định được nhánh,
+  người dùng cần nhập nhánh trước khi tạo project.
 - Sidebar: sắp theo last_activity_at, top 5 có ghim project hiện tại, trạng thái mở
   riêng từng project/workflow trong localStorage, modal tất cả project, lazy tree.
 - Workflow: tổng quan và danh sách ticket, tạo từ mẫu rồi xuất bản để kiểm tra luồng

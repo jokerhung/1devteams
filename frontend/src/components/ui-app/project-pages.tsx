@@ -8,6 +8,7 @@ import { Plus, Settings, Users, Folder } from "lucide-react";
 import { apiFetch, send } from "@/lib/api";
 import { keys } from "@/lib/query-keys";
 import { allProjects } from "@/lib/projects";
+import { WorkspacePathField } from "./workspace-path-field";
 import type {
   Agent,
   Team,
@@ -445,16 +446,23 @@ export function ProjectSettings({ pid }: { pid: string }) {
           ["workspace_path", "Đường dẫn thư mục local"],
           ["default_branch", "Nhánh Git"],
           ["git_remote", "Git remote"],
-        ].map(([key, label]) => (
-          <label className="field" key={key}>
-            {label}
-            <input
-              name={key}
-              required
-              defaultValue={String(p.data![key as keyof Project])}
+        ].map(([key, label]) =>
+          key === "workspace_path" ? (
+            <WorkspacePathField
+              key={key}
+              defaultValue={p.data!.workspace_path}
             />
-          </label>
-        ))}
+          ) : (
+            <label className="field" key={key}>
+              {label}
+              <input
+                name={key}
+                required
+                defaultValue={String(p.data![key as keyof Project])}
+              />
+            </label>
+          ),
+        )}
         <label className="field">
           Mô tả
           <textarea name="description" defaultValue={p.data.description} />

@@ -6,11 +6,13 @@ import { toast } from "sonner";
 import { send } from "@/lib/api";
 import type { Project, Workspace } from "@/lib/types";
 import { Modal } from "./primitives";
+import { WorkspacePathField } from "./workspace-path-field";
 export function ProjectDialog({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const client = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [path, setPath] = useState("");
+  const [branchOverride, setBranchOverride] = useState<string | null>(null);
   const [validation, setValidation] = useState<{
     path: string;
     result: Workspace;
@@ -33,6 +35,8 @@ export function ProjectDialog({ onClose }: { onClose: () => void }) {
     }
   }
   const current = validation?.path === path ? validation.result : null;
+  const detectedBranch =
+    current?.current_branch === "HEAD" ? "" : current?.current_branch || "";
   return (
     <Modal title="Tạo Project" onClose={onClose}>
       <form
@@ -73,18 +77,18 @@ export function ProjectDialog({ onClose }: { onClose: () => void }) {
           Tên project
           <input name="name" required maxLength={200} autoFocus />
         </label>
-        <label className="field">
-          Đường dẫn thư mục local (ACP Working Directory)
-          <input
-            className="font-mono"
-            name="workspace_path"
-            required
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-            onBlur={() => validate(path)}
-            placeholder="D:\projects\my-app"
-          />
-        </label>
+        <WorkspacePathField
+          label="Đường dẫn thư mục local (ACP Working Directory)"
+          value={path}
+          onChange={(value) => {
+            setPath(value);
+            setBranchOverride(null);
+          }}
+          onSelect={(value) => {
+            void validate(value);
+          }}
+          onBlur={() => validate(path)}
+        />
         {checking && (
           <p className="text-xs text-stone-500">Đang kiểm tra thư mục…</p>
         )}
@@ -108,8 +112,19 @@ export function ProjectDialog({ onClose }: { onClose: () => void }) {
         )}
         <label className="field">
           Nhánh Git
-          <input name="default_branch" defaultValue="develop" required />
+          <input
+            name="default_branch"
+            value={branchOverride ?? detectedBranch}
+            onChange={(e) => setBranchOverride(e.target.value)}
+            placeholder="Nhánh hiện tại của thư mục Git"
+            required
+          />
         </label>
+        {current?.is_git_repo && !detectedBranch && (
+          <p className="text-xs text-amber-700">
+            Không xác định được nhánh hiện tại. Hãy nhập nhánh Git để tiếp tục.
+          </p>
+        )}
         {error && (
           <p role="alert" className="error">
             {error}
