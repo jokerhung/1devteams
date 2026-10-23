@@ -1,21 +1,31 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
+import { Inter, JetBrains_Mono } from "next/font/google";
+import { Providers } from "@/components/providers";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
-
+const inter = Inter({
+  subsets: ["latin", "vietnamese"],
+  variable: "--font-inter",
+});
+const mono = JetBrains_Mono({
+  subsets: ["latin", "vietnamese"],
+  variable: "--font-jetbrains",
+});
 export const metadata: Metadata = {
-  title: "aiTeams — Setup & ACP Health",
-  description: "Kiểm tra backend và các adapter Agent Client Protocol.",
+  title: "aiTeams — Multi-Agent Workspace",
+  description: "Quản lý AI Agent, Team và dự án trong workspace của bạn.",
 };
-
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="vi">
-      <body className="antialiased">
-        <TooltipProvider>{children}</TooltipProvider>
+      <body className={`${inter.variable} ${mono.variable} antialiased`}>
+        <Providers>
+          <TooltipProvider>{children}</TooltipProvider>
+        </Providers>
       </body>
     </html>
   );

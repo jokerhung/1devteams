@@ -3,9 +3,10 @@
 Phase 1 ACP/API bridge: [implementation, usage and verification status](docs/specs/PHASE_1_IMPLEMENTATION_NOTES.md).
 Phase 2 Database & REST API: [cấu hình đăng nhập, migration và API](docs/specs/PHASE_2_IMPLEMENTATION_NOTES.md).
 Phase 3 Workflow Engine: [runner, checkpoint, gates, Git release và realtime](docs/specs/PHASE_3_IMPLEMENTATION_NOTES.md).
+Phase 4 Frontend Shell & Management: [giao diện, đăng nhập, quản lý và kiểm thử](docs/specs/PHASE_4_IMPLEMENTATION_NOTES.md).
 
-Monorepo FastAPI + Next.js 15, ACP/API bridge, database/REST API và workflow engine.
-Giao diện quản lý và chat đầy đủ thuộc các phase tiếp theo. Native ACP còn bị khóa bởi policy gate
+Monorepo FastAPI + Next.js 15, ACP/API bridge, database/REST API, workflow engine
+và giao diện quản lý. Workflow canvas và chat đầy đủ thuộc Phase 5–6. Native ACP còn bị khóa bởi policy gate
 cho đến khi công cụ của adapter được cách ly và kiểm chứng; xem ghi chú Phase 3.
 
 ## Cài đặt (PowerShell)
@@ -23,7 +24,8 @@ Copy-Item frontend/.env.example frontend/.env
 
 Đặt `JWT_SECRET` riêng trong `backend/.env` (bắt buộc; không commit). Các cấu hình còn lại
 có mặc định trong file mẫu. `ALLOWED_WORKSPACE_ROOTS` phân cách bằng `;`,
-`CORS_ORIGINS` phân cách bằng `,`. API wrapper dùng `NEXT_PUBLIC_API_URL`.
+`CORS_ORIGINS` phân cách bằng `,`. Next proxy gọi backend qua `BACKEND_URL`
+(fallback `NEXT_PUBLIC_API_URL`); browser dùng `/api/backend` cùng origin.
 
 ```powershell
 .\scripts\dev.ps1
@@ -48,7 +50,7 @@ BACKEND_PORT=8060
 Script tự đặt `NEXT_PUBLIC_API_URL` theo cổng backend và thêm địa chỉ frontend vào CORS.
 Biến môi trường của tiến trình được ưu tiên hơn `.env`. Backend vẫn dùng virtual environment.
 
-- Frontend: http://localhost:3060 — trang health có nút kiểm tra lại, loading và lỗi kết nối.
+- Frontend: http://localhost:3060 — đăng nhập bằng tài khoản owner trong `backend/.env`, quản lý Agents & Teams, Projects và Thông báo.
 - Backend: http://localhost:8060/api/health — `{"status":"ok","acp":{"claude":true,"codex":true}}`.
 - Swagger: http://localhost:8060/docs.
 
@@ -69,7 +71,10 @@ uv run pytest
 cd ../frontend
 npm run lint
 npm run typecheck
+npm run test
 npm run build
+npx playwright install chromium
+npm run test:e2e
 ```
 
 ## Spike ACP thật

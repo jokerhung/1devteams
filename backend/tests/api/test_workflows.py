@@ -67,9 +67,12 @@ async def test_cycle_and_inactive_agent_validation(client):
     graph["edges"].append({"id": "loop", "source": "g_clar", "target": "g_clar"})
     response = await client.post(f"/api/workflows/{wid}/validate", json=graph)
     assert any("chu trình" in error for error in response.json()["errors"])
-    await client.delete(
+    removal = await client.delete(
         f"/api/projects/{entity['id']}/members/TEAM/{(await client.get('/api/teams')).json()[0]['id']}"
     )
+    assert removal.status_code == 409
+    ba = next(agent for agent in (await client.get("/api/agents")).json() if agent["handle"] == "@ba")
+    assert (await client.patch(f"/api/agents/{ba['id']}", json={"is_active": False})).status_code == 200
     response = await client.post(f"/api/workflows/{wid}/validate")
     assert not response.json()["is_valid"]
 

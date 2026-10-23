@@ -39,3 +39,33 @@ async def validate_members(db, ids: list[str]) -> None:
     agents = list((await db.scalars(select(Agent).where(Agent.id.in_(ids), Agent.is_active.is_(True)))).all())
     if len(agents) != len(ids):
         fail(422, "Agent không tồn tại hoặc đã vô hiệu hóa", "validation_error")
+
+
+async def guard_removed_agents(db, project_id: str, before: set[str]) -> None:
+    """Reject changes that remove the last membership path to a workflow agent."""
+    removed = before - {agent.id for agent in await effective_agents(db, project_id)}
+    if not removed:
+        return
+    from app.db.models import Workflow, WorkflowVersion
+    from app.services.agent_service import graph_uses
+
+    used = []
+    workflows = (
+        await db.scalars(
+            select(Workflow).where(Workflow.project_id == project_id, Workflow.status != "ARCHIVED")
+        )
+    ).all()
+    for workflow in workflows:
+        published = await db.scalar(
+            select(WorkflowVersion).where(
+                WorkflowVersion.workflow_id == workflow.id,
+                WorkflowVersion.version == workflow.published_version,
+            )
+        )
+        if any(
+            graph_uses(workflow.graph, aid) or (published and graph_uses(published.graph, aid))
+            for aid in removed
+        ):
+            used.append(workflow.name)
+    if used:
+        fail(409, "Không gỡ được: agent đang dùng trong workflow: " + ", ".join(used), "member_in_use")

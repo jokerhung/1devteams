@@ -1,0 +1,16 @@
+export const keys = {
+  agents: ["agents"],
+  teams: ["teams"],
+  projects: ["projects"],
+  me: ["me"],
+  health: ["health"],
+  project: (id: string) => ["projects", id],
+  tree: (id: string) => ["projects", id, "tree"],
+  members: (id: string) => ["projects", id, "members"],
+  effective: (id: string) => ["projects", id, "effective"],
+  workflows: (id: string) => ["projects", id, "workflows"],
+  workflow: (id: string) => ["workflows", id],
+  tickets: (id: string) => ["tickets", id],
+  notifications: ["notifications"],
+  count: ["notifications", "count"],
+};

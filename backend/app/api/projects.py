@@ -13,6 +13,7 @@ from app.schemas.common import Page, Success
 from app.schemas.project import (
     MemberCreate,
     MemberOut,
+    MemberRolePatch,
     MembersOut,
     ProjectCreate,
     ProjectOut,
@@ -24,7 +25,7 @@ from app.schemas.project import (
 )
 from app.services.agent_service import public_agent
 from app.services.common import commit, fields, patch_values
-from app.services.project_service import effective_agents, visible_projects
+from app.services.project_service import effective_agents, guard_removed_agents, visible_projects
 from app.services.seed import DEFAULT_TEAM, template_graph
 from app.services.team_service import public_team
 from app.services.workspace_validator import validate_workspace
@@ -177,6 +178,7 @@ async def remove_member(
     pid: UUID, member_type: Literal["USER", "AGENT", "TEAM"], member_id: UUID, db: DB, user: CurrentUser
 ):
     await require_project(db, str(pid), user, write=True)
+    before = {agent.id for agent in await effective_agents(db, str(pid))}
     await db.execute(
         delete(ProjectMember).where(
             ProjectMember.project_id == str(pid),
@@ -184,6 +186,24 @@ async def remove_member(
             ProjectMember.member_id == str(member_id),
         )
     )
+    await guard_removed_agents(db, str(pid), before)
+    await commit(db)
+    return {"ok": True}
+
+
+@router.patch("/{pid}/members/USER/{member_id}", response_model=Success)
+async def patch_member_role(pid: UUID, member_id: UUID, body: MemberRolePatch, db: DB, user: CurrentUser):
+    await require_project(db, str(pid), user, write=True)
+    member = await db.scalar(
+        select(ProjectMember).where(
+            ProjectMember.project_id == str(pid),
+            ProjectMember.member_type == "USER",
+            ProjectMember.member_id == str(member_id),
+        )
+    )
+    if member is None:
+        fail(404, "Không tìm thấy thành viên", "not_found")
+    member.project_role = body.project_role
     await commit(db)
     return {"ok": True}
 

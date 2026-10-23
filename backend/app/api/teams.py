@@ -8,7 +8,8 @@ from app.db.models import ProjectMember, Team
 from app.schemas.common import Success
 from app.schemas.team import TeamAgents, TeamCreate, TeamOut, TeamPatch
 from app.services.common import commit, patch_values
-from app.services.team_service import public_team, set_agents
+from app.services.project_service import guard_removed_agents
+from app.services.team_service import public_team, set_agents, team_project_agents
 
 router = APIRouter(prefix="/teams", tags=["Teams"])
 
@@ -65,9 +66,12 @@ async def update_agents(tid: UUID, body: TeamAgents, db: DB, user: Admin):
 @router.delete("/{tid}", response_model=Success)
 async def delete_team(tid: UUID, db: DB, user: Admin):
     team = await record(db, Team, tid)
+    before = await team_project_agents(db, team.id)
     await db.execute(
         delete(ProjectMember).where(ProjectMember.member_type == "TEAM", ProjectMember.member_id == team.id)
     )
     await db.delete(team)
+    for pid, agents in before.items():
+        await guard_removed_agents(db, pid, agents)
     await commit(db)
     return {"ok": True}

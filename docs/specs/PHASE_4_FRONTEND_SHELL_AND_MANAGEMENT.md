@@ -198,12 +198,15 @@ Lưu **các sự kiện quan trọng cần người dùng tương tác**; không
 - Playwright (`e2e/management.spec.ts`): login → trang **Agents & Teams**: tạo agent `@security_checker` (codex, chọn logo) → **sửa agent → thấy “Đang khởi động lại…” rồi hoàn tất** → tạo AI Team chứa nó (thử lưu team rỗng → bị chặn) → tạo project (chỉ 3 ô; mock validate-workspace) → **vào tổng quan project trống, KHÔNG có hộp thoại workflow tự bật** → “Thành viên & AI Team” thêm *Core Bugfix Squad* → “Tạo workflow” dùng mẫu Fix Bug, xuất bản → tạo ticket từ nút `+` ở sidebar → **URL chuyển sang trang chat của ticket** → sidebar hiển thị cây project → workflow → ticket; tạo 6 project → chỉ thấy 5 + “Xem tất cả”.
 
 ## 7. Definition of Done
-- [ ] Giao diện khớp mockup về bố cục, màu, cỡ chữ (so sánh screenshot cạnh `aiTeams_gui.html`).
-- [ ] CRUD Agent/Team/Project/Member chạy với backend thật.
-- [ ] Không thể xoá agent built-in từ UI; nút ẩn.
-- [ ] Không có đường nào trên UI tạo ticket khi project chưa có workflow đã xuất bản.
-- [ ] Tạo project luôn cho ra **project trống**; AI Team, workflow, ticket tạo sau theo từng bước riêng.
-- [ ] Sidebar: thứ tự project ổn định, mỗi project có nút thu gọn riêng, không còn ô tìm kiếm, “Hộp thư”, tab Tổng quan hay mục Agent trong project.
-- [ ] Sửa agent luôn khởi động lại agent (có cảnh báo trước và trạng thái “Đang khởi động lại…”).
-- [ ] Responsive tối thiểu: ≥ 1280px đầy đủ; < 1024px sidebar thu thành drawer.
-- [ ] `npm run lint`, `npm run test`, `npx playwright test` pass.
+
+Đã kiểm chứng ngày 23/10/2026; xem [ghi chú triển khai và kết quả test](PHASE_4_IMPLEMENTATION_NOTES.md).
+
+- [x] Giao diện khớp mockup về bố cục, màu, cỡ chữ (so sánh screenshot cạnh `aiTeams_gui.html`).
+- [x] CRUD Agent/Team/Project/Member chạy với backend thật.
+- [x] Không thể xoá agent built-in từ UI; nút ẩn.
+- [x] Không có đường nào trên UI tạo ticket khi project chưa có workflow đã xuất bản.
+- [x] Tạo project luôn cho ra **project trống**; AI Team, workflow, ticket tạo sau theo từng bước riêng.
+- [x] Sidebar: thứ tự project ổn định, mỗi project có nút thu gọn riêng, không còn ô tìm kiếm, “Hộp thư”, tab Tổng quan hay mục Agent trong project.
+- [x] Sửa agent luôn khởi động lại agent (có cảnh báo trước và trạng thái “Đang khởi động lại…”).
+- [x] Responsive tối thiểu: ≥ 1280px đầy đủ; < 1024px sidebar thu thành drawer.
+- [x] `npm run lint`, `npm run test`, `npx playwright test` pass.

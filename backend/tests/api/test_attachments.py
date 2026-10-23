@@ -56,6 +56,12 @@ async def test_logo_sanitization_and_limit(client):
     assert (
         await client.post("/api/assets/logo", files={"file": ("fake.png", b"not-an-image", "image/png")})
     ).status_code == 422
+    # A recognizable PNG with a bad chunk checksum must return validation, not HTTP 500.
+    broken = bytearray(picture())
+    broken[broken.index(b"IDAT") + 4] ^= 1
+    assert (
+        await client.post("/api/assets/logo", files={"file": ("broken.png", bytes(broken), "image/png")})
+    ).status_code == 422
     response = await client.post("/api/assets/logo", files={"file": ("logo.png", picture(), "image/png")})
     assert response.status_code == 201, response.text
     image = await client.get(response.json()["logo_url"])

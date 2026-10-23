@@ -32,7 +32,7 @@ def thumbnail(data: bytes) -> bytes:
                 output = io.BytesIO()
                 clean.save(output, format="PNG")
                 return output.getvalue()
-    except (OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning):
+    except (OSError, ValueError, SyntaxError, Image.DecompressionBombError, Image.DecompressionBombWarning):
         raise ValueError("Ảnh không hợp lệ hoặc quá lớn") from None
 
 

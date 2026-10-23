@@ -91,6 +91,10 @@ class MemberOut(Record):
     project_role: str | None
 
 
+class MemberRolePatch(Input):
+    project_role: Literal["MAINTAINER", "REPORTER", "VIEWER"]
+
+
 class TreeWorkflow(Input):
     id: UUID
     name: str
