@@ -1,5 +1,8 @@
 # PHASE 3 — Workflow Engine (LangGraph động), Human Gates, GitService & Realtime
 
+> Trạng thái triển khai và kết quả kiểm chứng: [PHASE_3_IMPLEMENTATION_NOTES.md](PHASE_3_IMPLEMENTATION_NOTES.md).
+> Engine/API đã triển khai; acceptance native ACP trên bản copy HNBG_DEV còn bị chặn bởi policy gate Phase 1.
+
 ## 1. Mục tiêu
 1. Biên dịch `workflow.graph` (JSON React Flow — schema Phase 2 §5) thành `StateGraph` LangGraph chạy được, hỗ trợ vòng lặp, rẽ nhánh, `interrupt()` chờ người dùng.
 2. Chạy ticket ở background, stream mọi sự kiện agent (Phase 1) → lưu `ticket_messages` → đẩy WebSocket.
@@ -247,7 +250,7 @@ Text user gửi vào `/messages` (kèm file đính kèm nếu có — backend g�
 | `test_restart_resume` | tạo runner mới (giả lập restart) → confirm ticket đang WAITING_USER_CONFIRM vẫn chạy được |
 
 ## 13. Definition of Done
-- [ ] Toàn bộ test engine pass (không cần CLI thật).
+- [x] Toàn bộ test engine pass (không cần CLI thật).
 - [ ] Chạy thật trên bản copy của `HNBG_DEV` (marker `real_acp`): luồng Start → @ba → @developer → @tester → confirm → @leader push lên một remote test thành công.
-- [ ] @developer cố `git commit` → bị chặn, event `permission` allowed=false hiển thị trong log.
-- [ ] Không còn đường nào để LLM tự chạy `git push`.
+- [x] @developer cố `git commit` → bị chặn, event `permission` allowed=false hiển thị trong log (ACP peer giả chạy subprocess thật; native chưa xác minh).
+- [x] Runtime mặc định không mở đường cho LLM tự chạy `git push`: guard cấm Git mutations dù profile có can_git_release; adapter native chưa được cách ly vẫn fail-closed.

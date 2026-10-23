@@ -1,3 +1,10 @@
+from typing import Any
+
+from app.acp.types import AgentRuntimeConfig
+from app.engine.markers import routing_instruction
+from app.engine.state import WorkflowState
+from app.schemas.workflow import Node
+
 DEFAULT_SYSTEM_PROMPTS = {
     "BA": "Bạn là Business Analyst của dự án. Tiếp nhận phản ánh lỗi; đọc mã nguồn (chỉ đọc) để hiểu "
     "ngữ cảnh; viết kịch bản tái tạo lỗi (STR) gồm điều kiện tiên quyết, các bước, kết quả thực tế, "
@@ -14,3 +21,38 @@ DEFAULT_SYSTEM_PROMPTS = {
     "và commit message theo Conventional Commits. Không tự chạy git add/commit/push — "
     "hệ thống sẽ thực thi.",
 }
+
+
+def build_node_prompt(
+    node: Node, agent: AgentRuntimeConfig, state: WorkflowState, is_first_turn_in_session: bool
+) -> str:
+    cursor = state.get("cursors", {}).get(agent.agent_id, {}) if not is_first_turn_in_session else {}
+    parts = []
+    if is_first_turn_in_session:
+        parts.append(
+            f"# Ticket #{state.get('number', '')}: {state['title']}\n{state['description']}\n"
+            f"Workspace: {state['workspace_path']}. Chỉ làm việc trong thư mục này."
+        )
+    outputs = state.get("outputs", [])[cursor.get("outputs", 0) :]
+    blocks = [f"## Output của {o['agent_handle']}\n{o['text'][:4000]}" for o in outputs]
+    chosen: list[str] = []
+    size = 0
+    for block in reversed(blocks):
+        if size + len(block) > 16000:
+            break
+        chosen.insert(0, block)
+        size += len(block)
+    parts.extend(chosen)
+    for item in state.get("user_inputs", [])[cursor.get("inputs", 0) :]:
+        parts.append(f"## User {item.get('kind', 'message')}\n{item.get('text', '')}")
+    if agent.runtime == "openai-api":
+        parts.append("Bạn không có công cụ; chỉ dùng thông tin được cung cấp, không giả vờ đã chạy lệnh.")
+    parts.append(str(node.data.get("instructions", "")))
+    parts.append(routing_instruction(str(node.data.get("routing", "none"))))
+    return "\n\n".join(parts)
+
+
+def user_identity(user: Any) -> dict[str, str]:
+    if isinstance(user, dict):
+        return {"id": str(user["id"]), "display_name": str(user.get("display_name", "User"))}
+    return {"id": str(user.id), "display_name": str(user.display_name)}

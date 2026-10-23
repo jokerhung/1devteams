@@ -43,7 +43,9 @@ async def test_templates_versions_and_validation(client):
 async def test_archive_and_delete_rules(client):
     entity = await project(client, seeded=True)
     wid, pid = entity["workflow"]["id"], entity["id"]
-    assert (await client.post(f"/api/workflows/{wid}/tickets", json={"title": "Ticket"})).status_code == 201
+    assert (
+        await client.post(f"/api/workflows/{wid}/tickets", json={"title": "Ticket", "auto_start": False})
+    ).status_code == 201
     assert (await client.post(f"/api/workflows/{wid}/archive")).status_code == 409
     assert (await client.delete(f"/api/workflows/{wid}")).status_code == 409
     assert (await client.patch(f"/api/workflows/{wid}", json={"ticket_prefix": "NEW"})).status_code == 409

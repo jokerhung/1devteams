@@ -19,6 +19,9 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite+aiosqlite:///./aiteams.db"
     checkpoint_db: str = "./checkpoints.db"
+    checkpoint_postgres_url: SecretStr | None = None
+    max_node_iterations: int = Field(default=5, gt=0)
+    api_context_diff_chars: int = Field(default=40000, gt=0)
     jwt_secret: SecretStr = Field(min_length=1)
     jwt_expire_minutes: int = Field(default=480, gt=0)
     app_secret_key: SecretStr | None = None

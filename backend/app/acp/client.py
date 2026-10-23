@@ -17,7 +17,7 @@ from app.acp.jsonrpc import ACPProcessExited, JsonRpcConnection, RPCError
 from app.acp.process import stop_process
 from app.acp.security import scrub, scrub_data
 from app.acp.types import ACPEventType, ACPStreamEvent, AgentRuntimeConfig, Json, PromptResult, RuntimeType
-from app.core.config import get_settings, resolve_binary
+from app.core.config import Settings, get_settings, resolve_binary
 
 logger = logging.getLogger(__name__)
 BinResolver = Callable[[RuntimeType], list[str]]
@@ -27,8 +27,8 @@ class RuntimePolicyError(RuntimeError):
     pass
 
 
-def default_resolver(runtime: RuntimeType) -> list[str]:
-    settings = get_settings()
+def default_resolver(runtime: RuntimeType, settings: Settings | None = None) -> list[str]:
+    settings = settings or get_settings()
     name = settings.claude_acp_bin if runtime == "claude-code" else settings.codex_acp_bin
     binary = resolve_binary(name)
     if binary is None:
@@ -63,6 +63,7 @@ class ACPSession:
         self.model_effective: str | None = None
         self.runtime_version: str | None = None
         self.available_models: list[Json] = []
+        self.agent_capabilities: Json = {}
         self.modified_files: set[str] = set()
         self.turn_interrupted = False
         self.busy = False
@@ -130,6 +131,7 @@ class ACPSession:
             if initialized.get("protocolVersion") != 1:
                 raise RPCError(-32602, "Unsupported ACP protocol version")
             self.runtime_version = initialized.get("agentInfo", {}).get("version")
+            self.agent_capabilities = initialized.get("agentCapabilities", {})
             params: Json = {"cwd": str(self.workspace), "mcpServers": []}
             if self.cfg.runtime == "claude-code":
                 params["_meta"] = {"systemPrompt": {"append": self.cfg.system_prompt}}
@@ -257,7 +259,9 @@ class ACPSession:
         else:
             logger.debug("Ignored ACP update type=%s", kind)
 
-    async def prompt(self, text: str) -> AsyncIterator[ACPStreamEvent]:
+    async def prompt(self, text: str, *, images: list[Json] | None = None) -> AsyncIterator[ACPStreamEvent]:
+        if images and not self.agent_capabilities.get("promptCapabilities", {}).get("image"):
+            raise ValueError("Adapter does not advertise image prompts")
         if self.busy:
             raise RuntimeError("Concurrent prompts on one session are not supported")
         if not self.alive:
@@ -282,7 +286,7 @@ class ACPSession:
                     "session/prompt",
                     {
                         "sessionId": self.session_id,
-                        "prompt": [{"type": "text", "text": prefix + text}],
+                        "prompt": [{"type": "text", "text": prefix + text}, *(images or [])],
                     },
                     self.timeout,
                 )

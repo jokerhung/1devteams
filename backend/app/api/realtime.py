@@ -45,10 +45,16 @@ async def user_events(socket: WebSocket):
                     if disconnect_task in done:
                         break
                     if personal_task in done:
+                        if personal_task.result().get("event_type") == "slow_consumer":
+                            await socket.close(1013)
+                            return
                         await socket.send_json(personal_task.result())
                         personal_task = asyncio.create_task(personal.get())
                     if global_task in done:
                         event = global_task.result()
+                        if event.get("event_type") == "slow_consumer":
+                            await socket.close(1013)
+                            return
                         permitted = True
                         if event.get("ticket_id") and user.system_role not in {"OWNER", "ADMIN"}:
                             from app.db.models import Ticket

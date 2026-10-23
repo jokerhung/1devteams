@@ -1,7 +1,10 @@
 import asyncio
 import sys
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
+from functools import partial
+from pathlib import Path
+from typing import Any
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -14,7 +17,7 @@ from pydantic import BaseModel  # noqa: E402
 from sqlalchemy.exc import IntegrityError  # noqa: E402
 from starlette.exceptions import HTTPException  # noqa: E402
 
-from app.acp.pool import ACPProcessPool  # noqa: E402
+from app.acp.pool import ACPProcessPool, create_session  # noqa: E402
 from app.api import (  # noqa: E402
     agents,
     assets,
@@ -31,11 +34,13 @@ from app.api import (  # noqa: E402
 from app.core.config import Settings, get_settings, resolve_binary  # noqa: E402
 from app.core.events import EventBus  # noqa: E402
 from app.db.session import database, migrate  # noqa: E402
+from app.engine.runner import TicketRunner  # noqa: E402
 from app.schemas.common import ErrorResponse  # noqa: E402
 from app.services.assets import cleanup_pending  # noqa: E402
 from app.services.connections import ConnectionLimiter  # noqa: E402
 from app.services.models_catalog import ModelsCatalog  # noqa: E402
 from app.services.seed import seed  # noqa: E402
+from app.ws.ticket_ws import router as workflow_socket_router  # noqa: E402
 
 
 class HealthResponse(BaseModel):
@@ -50,14 +55,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         bus = EventBus()
         pool = ACPProcessPool(
-            event_bus=bus, max_acp=config.max_acp_processes, max_api=config.max_api_concurrency
+            event_bus=bus,
+            max_acp=config.max_acp_processes,
+            max_api=config.max_api_concurrency,
+            factory=partial(create_session, settings=config),
         )
         app.state.event_bus, app.state.acp_pool = bus, pool
         engine, sessions = database(config.database_url)
         app.state.db_session = sessions
+        bus.sessions = sessions
         app.state.models_catalog = ModelsCatalog()
         app.state.connection_limiter = ConnectionLimiter()
         cleanup_task = None
+        stack = AsyncExitStack()
+        runner = None
 
         async def clean_attachments():
             while True:
@@ -70,18 +81,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             async with sessions() as db:
                 await seed(db, config)
                 await cleanup_pending(db, config)
+            saver: Any
+            if config.checkpoint_postgres_url:
+                if sys.platform == "win32":
+                    raise ValueError(
+                        "CHECKPOINT_POSTGRES_URL requires Linux; Windows ACP needs ProactorEventLoop. "
+                        "Use CHECKPOINT_DB (SQLite) on Windows."
+                    )
+                from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+                saver = await stack.enter_async_context(
+                    AsyncPostgresSaver.from_conn_string(config.checkpoint_postgres_url.get_secret_value())
+                )
+                await saver.setup()
+            else:
+                from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+                from app.core.config import BACKEND_ROOT
+
+                checkpoint = Path(config.checkpoint_db)
+                if not checkpoint.is_absolute():
+                    checkpoint = BACKEND_ROOT / checkpoint
+                await asyncio.to_thread(checkpoint.parent.mkdir, parents=True, exist_ok=True)
+                saver = await stack.enter_async_context(AsyncSqliteSaver.from_conn_string(str(checkpoint)))
+                await saver.setup()
+            runner = TicketRunner(sessions, pool, bus, config, saver)
+            app.state.ticket_runner = runner
+            await runner.recover()
             cleanup_task = asyncio.create_task(clean_attachments())
             yield
         finally:
+            if runner:
+                await runner.close()
             if cleanup_task:
                 cleanup_task.cancel()
                 await asyncio.gather(cleanup_task, return_exceptions=True)
             await pool.close_all()
+            await stack.aclose()
             await engine.dispose()
 
     app = FastAPI(
         title="aiTeams",
-        version="0.2.0",
+        version="0.3.0",
         lifespan=lifespan,
         responses={
             status: {"model": ErrorResponse} for status in [400, 401, 403, 404, 409, 413, 422, 429, 503]
@@ -102,6 +143,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ]:
         app.include_router(router, prefix="/api")
     app.include_router(realtime.router)
+    app.include_router(workflow_socket_router)
 
     @app.exception_handler(HTTPException)
     async def http_error(request, error):

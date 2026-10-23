@@ -49,8 +49,25 @@ if (-not (Test-Path -LiteralPath (Join-Path $backendRoot '.env')) -and -not $env
     throw 'Create backend/.env from backend/.env.example and set JWT_SECRET.'
 }
 foreach ($port in @($backendPort, $frontendPort)) {
-    if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
-        throw "Port $port is already in use. Stop that service or run the apps separately."
+    $ownerIds = @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique)
+    foreach ($ownerId in $ownerIds) {
+        if ($ownerId -le 4 -or $ownerId -eq $PID) {
+            throw "Cannot stop protected process $ownerId using port $port."
+        }
+        Write-Host "Stopping process $ownerId using port $port..."
+        # Stop the process tree so Next.js/uvicorn children do not retain the port.
+        & taskkill.exe /PID $ownerId /T /F | Out-Host
+        if ($LASTEXITCODE -ne 0 -and (Get-Process -Id $ownerId -ErrorAction SilentlyContinue)) {
+            throw "Could not stop process $ownerId using port $port. Check process permissions."
+        }
+    }
+    $portDeadline = (Get-Date).AddSeconds(10)
+    while (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
+        if ((Get-Date) -ge $portDeadline) {
+            throw "Port $port is still in use after stopping its previous process."
+        }
+        Start-Sleep -Milliseconds 200
     }
 }
 $processes = @()

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from app.schemas.common import Input, Record
 
@@ -69,3 +69,23 @@ class AttachmentOut(Input):
     size: int
     url: str
     thumbnail_url: str | None
+
+
+class Reply(Input):
+    text: str = Field(min_length=1, max_length=100000)
+
+
+class Confirm(Input):
+    approved: bool = Field(strict=True)
+    feedback: str | None = Field(default=None, max_length=100000)
+
+
+class ChatMessage(Input):
+    text: str = Field(default="", max_length=100000)
+    attachment_ids: list[UUID] = Field(default_factory=list, max_length=5)
+
+    @model_validator(mode="after")
+    def nonempty(self):
+        if not self.text.strip() and not self.attachment_ids:
+            raise ValueError("Tin nhắn cần nội dung hoặc tệp đính kèm")
+        return self

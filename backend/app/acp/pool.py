@@ -8,16 +8,36 @@ from collections.abc import Callable
 from pathlib import Path
 
 from app.acp.api_session import ApiAgentSession
-from app.acp.client import ACPSession
+from app.acp.client import ACPSession, default_resolver
 from app.acp.types import AgentRuntimeConfig, AgentSession
-from app.core.config import get_settings
+from app.acp.url_policy import URLPolicy
+from app.core.config import Settings, get_settings
 from app.core.events import EventBus
 
 SessionFactory = Callable[[AgentRuntimeConfig, Path], AgentSession]
 
 
-def create_session(cfg: AgentRuntimeConfig, workspace: Path) -> AgentSession:
-    return ApiAgentSession(cfg, workspace) if cfg.runtime == "openai-api" else ACPSession(cfg, workspace)
+def create_session(
+    cfg: AgentRuntimeConfig, workspace: Path, settings: Settings | None = None
+) -> AgentSession:
+    settings = settings or get_settings()
+    if cfg.runtime == "openai-api":
+        return ApiAgentSession(
+            cfg,
+            workspace,
+            timeout=settings.acp_prompt_timeout_sec,
+            context_chars=settings.api_max_context_chars,
+            policy=URLPolicy(
+                set(settings.api_allowed_http_hosts.split(",")),
+                set(settings.api_allowed_private_hosts.split(",")),
+            ),
+        )
+    return ACPSession(
+        cfg,
+        workspace,
+        bin_resolver=lambda runtime: default_resolver(runtime, settings),
+        timeout=settings.acp_prompt_timeout_sec,
+    )
 
 
 class ACPProcessPool:
@@ -131,6 +151,12 @@ class ACPProcessPool:
             for key in list(self.sessions):
                 if key[0] == ticket_id:
                     await self._remove(key)
+
+    async def discard_session(self, ticket_id: str, agent_id: str) -> None:
+        async with self._condition:
+            key = (ticket_id, agent_id)
+            if key in self.sessions:
+                await self._remove(key)
 
     async def _reap(self) -> None:
         while True:

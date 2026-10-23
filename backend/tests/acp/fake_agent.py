@@ -28,6 +28,10 @@ def main():
             assert params["prompt"][0]["text"].startswith(prefix)
         if step.get("assert_no_role"):
             assert not params["prompt"][0]["text"].startswith("[SYSTEM ROLE]")
+        if "assert_image_count" in step:
+            images = [item for item in params["prompt"] if item["type"] == "image"]
+            assert len(images) == step["assert_image_count"], images
+            assert all(image.get("data") and image.get("mimeType") == "image/png" for image in images)
         if step.get("junk"):
             print("not json", flush=True)
             print("[]", flush=True)

@@ -33,6 +33,7 @@ async def test_lifespan_owns_pool_and_closes_on_shutdown(tmp_path):
             max_acp_processes=2,
             max_api_concurrency=3,
             database_url=f"sqlite+aiosqlite:///{tmp_path / 'health.db'}",
+            checkpoint_db=str(tmp_path / "checkpoints.db"),
             data_dir=tmp_path / "data",
         )
     )

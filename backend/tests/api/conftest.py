@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 from uuid import uuid4
 
 import httpx
@@ -24,6 +25,7 @@ def workspace(tmp_path):
 async def client(tmp_path, workspace):
     admin_engine = None
     database_name = None
+    checkpoint_url = None
     url = f"sqlite+aiosqlite:///{tmp_path / 'api.db'}"
     if os.environ.get("AITEAMS_TEST_POSTGRES_URL"):
         source = make_url(os.environ["AITEAMS_TEST_POSTGRES_URL"])
@@ -31,10 +33,17 @@ async def client(tmp_path, workspace):
         database_name = "aiteams_test_" + uuid4().hex
         async with admin_engine.connect() as connection:
             await connection.exec_driver_sql(f'CREATE DATABASE "{database_name}"')
+            await connection.exec_driver_sql(f'CREATE DATABASE "{database_name}_cp"')
         url = source.set(database=database_name).render_as_string(hide_password=False)
+        if sys.platform != "win32":
+            checkpoint_url = source.set(
+                drivername="postgresql", database=database_name + "_cp"
+            ).render_as_string(hide_password=False)
     settings = Settings(
         jwt_secret="api-test-secret",
         database_url=url,
+        checkpoint_db=str(tmp_path / "checkpoints.db"),
+        checkpoint_postgres_url=checkpoint_url,
         data_dir=tmp_path / "data",
         allowed_workspace_roots=str(tmp_path),
         app_secret_key=Fernet.generate_key().decode(),
@@ -63,6 +72,7 @@ async def client(tmp_path, workspace):
         if admin_engine:
             async with admin_engine.connect() as connection:
                 await connection.exec_driver_sql(f'DROP DATABASE "{database_name}" WITH (FORCE)')
+                await connection.exec_driver_sql(f'DROP DATABASE "{database_name}_cp" WITH (FORCE)')
             await admin_engine.dispose()
 
 
@@ -84,7 +94,7 @@ async def ticket(client):
     entity = await project(client, seeded=True)
     result = await client.post(
         f"/api/workflows/{entity['workflow']['id']}/tickets",
-        json={"title": "Đơ nút Xuất Excel báo cáo", "description": "Details"},
+        json={"title": "Đơ nút Xuất Excel báo cáo", "description": "Details", "auto_start": False},
     )
     assert result.status_code == 201, result.text
     return result.json()["ticket"]

@@ -35,7 +35,7 @@ def validate_graph(graph: Graph, agents: list[Agent]) -> list[str]:
             continue
         forward[edge.source].append(edge.target)
         backward[edge.target].append(edge.source)
-        handles[edge.source].append(edge.sourceHandle)
+        handles[edge.source].append(None if edge.sourceHandle == "default" else edge.sourceHandle)
         if not (nodes[edge.source].type == "human_confirm" and edge.sourceHandle == "approved"):
             unsafe[edge.source].append(edge.target)
     if len(starts) == 1:
@@ -57,6 +57,13 @@ def validate_graph(graph: Graph, agents: list[Agent]) -> list[str]:
             required = {"true", "false"}
             if not isinstance(node.data.get("expression"), str) or not node.data["expression"].strip():
                 errors.append(f"{node.id}: condition cần expression")
+            else:
+                from app.engine.conditions import evaluate
+
+                try:
+                    evaluate(node.data["expression"], {})
+                except ValueError:
+                    errors.append(f"{node.id}: expression không hợp lệ")
         elif node.type == "agent":
             if routing == "ba":
                 required = {"need_info", "ready"}

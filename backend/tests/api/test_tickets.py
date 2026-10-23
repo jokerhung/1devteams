@@ -14,21 +14,24 @@ async def test_ticket_order_versions_numbering_tree(client):
     ).status_code == 400
     seeded = (await client.post(f"/api/projects/{pid}/seed-default")).json()["workflow"]
     created = await client.post(
-        f"/api/workflows/{seeded['id']}/tickets", json={"title": "Đơ nút Xuất Excel báo cáo"}
+        f"/api/workflows/{seeded['id']}/tickets",
+        json={"title": "Đơ nút Xuất Excel báo cáo", "auto_start": False},
     )
     assert created.status_code == 201, created.text
     ticket = created.json()["ticket"]
     assert ticket["code"] == "#BUG-1" and ticket["channel_slug"] == "bug-do-nut-xuat-excel-bao-cao"
-    assert created.json()["auto_start_pending"] and ticket["status"] == "OPEN"
+    assert not created.json()["auto_start_pending"] and ticket["status"] == "OPEN"
     assert str(ticket["id"]) in created.json()["chat_url"]
     await client.put(f"/api/workflows/{seeded['id']}/graph", json=seeded["graph"])
     await client.post(f"/api/workflows/{seeded['id']}/publish")
     assert (await client.get(f"/api/tickets/{ticket['id']}")).json()["workflow_version"] == 1
     await client.put(f"/api/workflows/{draft['id']}/graph", json=seeded["graph"])
     await client.post(f"/api/workflows/{draft['id']}/publish")
-    second = (await client.post(f"/api/workflows/{draft['id']}/tickets", json={"title": "Next"})).json()[
-        "ticket"
-    ]
+    second = (
+        await client.post(
+            f"/api/workflows/{draft['id']}/tickets", json={"title": "Next", "auto_start": False}
+        )
+    ).json()["ticket"]
     assert second["code"] == "#FEAT-2"
     assert (await client.patch(f"/api/tickets/{ticket['id']}", json={"title": "Updated"})).status_code == 200
     tree = (await client.get(f"/api/projects/{pid}/tree")).json()
@@ -40,7 +43,10 @@ async def test_concurrent_ticket_counter_and_message_resume(client):
     entity = await project(client, seeded=True)
     wid = entity["workflow"]["id"]
     responses = await asyncio.gather(
-        *(client.post(f"/api/workflows/{wid}/tickets", json={"title": "Same title"}) for _ in range(6))
+        *(
+            client.post(f"/api/workflows/{wid}/tickets", json={"title": "Same title", "auto_start": False})
+            for _ in range(6)
+        )
     )
     assert all(response.status_code == 201 for response in responses), [
         response.text for response in responses

@@ -2,9 +2,11 @@
 
 Phase 1 ACP/API bridge: [implementation, usage and verification status](docs/specs/PHASE_1_IMPLEMENTATION_NOTES.md).
 Phase 2 Database & REST API: [cấu hình đăng nhập, migration và API](docs/specs/PHASE_2_IMPLEMENTATION_NOTES.md).
+Phase 3 Workflow Engine: [runner, checkpoint, gates, Git release và realtime](docs/specs/PHASE_3_IMPLEMENTATION_NOTES.md).
 
-Monorepo FastAPI + Next.js 15, ACP/API bridge và database/REST API quản trị.
-Workflow engine và giao diện quản lý đầy đủ thuộc các phase tiếp theo.
+Monorepo FastAPI + Next.js 15, ACP/API bridge, database/REST API và workflow engine.
+Giao diện quản lý và chat đầy đủ thuộc các phase tiếp theo. Native ACP còn bị khóa bởi policy gate
+cho đến khi công cụ của adapter được cách ly và kiểm chứng; xem ghi chú Phase 3.
 
 ## Cài đặt (PowerShell)
 
@@ -16,7 +18,7 @@ uv sync --project backend --python 3.12
 npm --prefix frontend ci
 Copy-Item .env.example .env
 Copy-Item backend/.env.example backend/.env
-Copy-Item frontend/.env.example frontend/.env.local
+Copy-Item frontend/.env.example frontend/.env
 ```
 
 Đặt `JWT_SECRET` riêng trong `backend/.env` (bắt buộc; không commit). Các cấu hình còn lại

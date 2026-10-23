@@ -129,6 +129,31 @@ class DynamicPermissionGuard:
                     "call",
                 }:
                     return self.decision("execute", False, "Uninspectable command wrapper")
+                if (
+                    tokens[0] == "git"
+                    and len(tokens) > 1
+                    and tokens[1]
+                    in {
+                        "add",
+                        "commit",
+                        "push",
+                        "merge",
+                        "reset",
+                        "clean",
+                        "checkout",
+                        "rebase",
+                        "cherry-pick",
+                        "apply",
+                        "restore",
+                        "update-ref",
+                        "config",
+                        "init",
+                        "clone",
+                    }
+                ):
+                    return self.decision(
+                        "execute", False, "Git mutations are reserved for backend GitService"
+                    )
                 for blocked in self.profile.blocked_commands:
                     pattern = command_tokens(blocked)
                     matches = bool(pattern and tokens[: len(pattern)] == pattern)

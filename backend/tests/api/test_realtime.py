@@ -10,6 +10,7 @@ def test_authenticated_websocket_and_notification_delivery(tmp_path):
         Settings(
             jwt_secret="ws-secret",
             database_url=f"sqlite+aiosqlite:///{tmp_path / 'ws.db'}",
+            checkpoint_db=str(tmp_path / "checkpoints.db"),
             data_dir=tmp_path / "data",
             bootstrap_admin_email="ws@example.com",
             bootstrap_admin_password="Password123!",

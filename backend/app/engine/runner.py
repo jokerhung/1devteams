@@ -1,0 +1,379 @@
+from __future__ import annotations
+
+import asyncio
+import os
+from pathlib import Path
+from typing import Any, cast
+
+from langgraph.types import Command
+from sqlalchemy import select
+
+from app.acp.client import RuntimePolicyError
+from app.acp.pool import ACPProcessPool
+from app.core.config import Settings
+from app.core.deps import fail, require_project
+from app.core.events import EventBus
+from app.db.models import Project, Ticket, User, Workflow, WorkflowVersion
+from app.engine.compiler import compile_workflow
+from app.engine.context import RunContext
+from app.engine.prompts import user_identity
+from app.schemas.workflow import Graph
+from app.services.agent_service import runtime_config
+from app.services.git_service import GitService
+from app.services.notification_service import resolve_gate
+from app.services.project_service import effective_agents
+
+
+class TicketRunner:
+    """Single-worker executor. Locks cover every workflow sharing a canonical workspace.
+
+    Keep the workspace while waiting for confirmation or after a writing agent has run.
+    Release it only for an input gate reached before any agent with write permission.
+    """
+
+    def __init__(
+        self, sessions: Any, pool: ACPProcessPool, events: EventBus, settings: Settings, checkpointer: Any
+    ) -> None:
+        self.sessions, self.pool, self.events, self.settings = sessions, pool, events, settings
+        self.checkpointer = checkpointer
+        self.tasks: dict[str, asyncio.Task[None]] = {}
+        self.graphs: dict[tuple[str, int], Any] = {}
+        self.contexts: dict[str, RunContext] = {}
+        self.workspace_locks: dict[str, asyncio.Lock] = {}
+        self.owners: dict[str, str] = {}
+        self.owned: dict[str, str] = {}
+        self.action_locks: dict[str, asyncio.Lock] = {}
+        self.closed = False
+
+    async def load(self, tid: str) -> tuple[Any, RunContext, Ticket]:
+        async with self.sessions() as db:
+            ticket = await db.get(Ticket, tid)
+            if ticket is None:
+                fail(404, "Không tìm thấy ticket", "not_found")
+            project = await db.get(Project, ticket.project_id)
+            snapshot = await db.scalar(
+                select(WorkflowVersion).where(
+                    WorkflowVersion.workflow_id == ticket.workflow_id,
+                    WorkflowVersion.version == ticket.workflow_version,
+                )
+            )
+            if snapshot is None:
+                fail(409, "Không tìm thấy snapshot workflow", "missing_snapshot")
+            key = (ticket.workflow_id, ticket.workflow_version)
+            if key not in self.graphs:
+                agents = await effective_agents(db, ticket.project_id)
+                configs = {a.id: runtime_config(a, self.settings) for a in agents if a.is_active}
+                try:
+                    self.graphs[key] = compile_workflow(
+                        Graph.model_validate(snapshot.graph), configs, self.checkpointer
+                    )
+                except ValueError:
+                    fail(409, "Snapshot workflow không còn hợp lệ với cấu hình agent", "invalid_snapshot")
+            return self.graphs[key], self.context(ticket, project), ticket
+
+    def context(self, ticket: Ticket, project: Project) -> RunContext:
+        if ticket.id not in self.contexts:
+            ctx = RunContext(
+                ticket.id,
+                project.id,
+                self.sessions,
+                self.pool,
+                self.events,
+                self.settings,
+                GitService(Path(project.workspace_path)),
+                project.git_remote,
+                project.default_branch,
+            )
+
+            async def terminal(command: str, output: str) -> None:
+                await ctx.emit(
+                    "terminal_output",
+                    output,
+                    sender_type="AGENT",
+                    sender_name="@leader",
+                    metadata={"command": command},
+                )
+
+            ctx.git.emit = terminal
+            self.contexts[ticket.id] = ctx
+        return self.contexts[ticket.id]
+
+    def config(self, tid: str, ctx: RunContext) -> dict[str, Any]:
+        return {"configurable": {"thread_id": tid, "ctx": ctx}, "recursion_limit": 100}
+
+    async def checkpoint_error(self, graph: Any, ctx: RunContext, reason: str) -> None:
+        try:
+            snapshot = await graph.aget_state(self.config(ctx.ticket_id, ctx))
+            if snapshot.values:
+                # Update from the last committed node; retain the failed node as the next task.
+                await graph.aupdate_state(self.config(ctx.ticket_id, ctx), {"error": reason})
+        except Exception:
+            await ctx.emit("log", "Không thể cập nhật checkpoint lỗi; lỗi được lưu trong ticket.result.")
+
+    async def authorize(self, tid: str, user: Any, *, confirm: bool = False) -> Ticket:
+        async with self.sessions() as db:
+            identity = user_identity(user)
+            actor = await db.get(User, identity["id"])
+            ticket = await db.get(Ticket, tid)
+            if not actor:
+                fail(401, "Yêu cầu đăng nhập", "unauthorized")
+            if ticket is None:
+                fail(404, "Không tìm thấy ticket", "not_found")
+            await require_project(db, ticket.project_id, actor, write=confirm, report=not confirm)
+            return cast(Ticket, ticket)
+
+    async def recover(self) -> None:
+        async with self.sessions() as db:
+            rows = (
+                await db.scalars(
+                    select(Ticket)
+                    .where(Ticket.status.in_(["RUNNING", "WAITING_USER_INPUT", "WAITING_USER_CONFIRM"]))
+                    .order_by(Ticket.created_at)
+                )
+            ).all()
+        for ticket in rows:
+            try:
+                graph, ctx, _ = await self.load(ticket.id)
+                checkpoint = await graph.aget_state(self.config(ticket.id, ctx))
+                if ticket.status == "RUNNING":
+                    await self.checkpoint_error(graph, ctx, "server restart")
+                    await ctx.status("FAILED", ticket.current_node_id, {"error": "server restart"})
+                    await ctx.emit("error", "server restart — dùng retry để tiếp tục checkpoint")
+                elif ticket.status == "WAITING_USER_CONFIRM" or checkpoint.values.get("wrote_files"):
+                    key = os.path.normcase(str(ctx.git.workspace.resolve()))
+                    if key in self.owners:
+                        raise ValueError("Conflicting recovered workspace owners")
+                    await self.acquire(ticket.id, ctx)
+            except Exception:
+                # Invalid/missing snapshots must not prevent other tickets or the server from starting.
+                async with self.sessions() as db:
+                    row = await db.get(Ticket, ticket.id)
+                    row.status, row.result = "FAILED", {"error": "server restart: checkpoint không khả dụng"}
+                    await db.commit()
+
+    async def acquire(self, tid: str, ctx: RunContext) -> None:
+        if tid in self.owned:
+            return
+        path = os.path.normcase(str(ctx.git.workspace.resolve()))
+        lock = self.workspace_locks.setdefault(path, asyncio.Lock())
+        queued = lock.locked()
+        owner = self.owners.get(path)
+        # Register the acquisition before any DB/log I/O so later tickets cannot overtake it.
+        waiter = asyncio.create_task(lock.acquire())
+        try:
+            if queued:
+                async with self.sessions() as db:
+                    ticket = await db.get(Ticket, owner) if owner else None
+                    flow = await db.get(Workflow, ticket.workflow_id) if ticket else None
+                    content = (
+                        f"Đang chờ ticket #{ticket.number} (workflow {flow.name}) giải phóng workspace…"
+                        if flow and ticket
+                        else "Đang chờ workspace…"
+                    )
+                await ctx.emit("log", content)
+            await waiter
+        except BaseException:
+            if waiter.done() and not waiter.cancelled() and waiter.exception() is None:
+                lock.release()
+            else:
+                waiter.cancel()
+                await asyncio.gather(waiter, return_exceptions=True)
+            raise
+        self.owned[tid], self.owners[path] = path, tid
+
+    def release(self, tid: str) -> None:
+        path = self.owned.pop(tid, None)
+        if path:
+            self.owners.pop(path, None)
+            self.workspace_locks[path].release()
+
+    def schedule(self, tid: str, graph: Any, ctx: RunContext, value: Any) -> None:
+        if self.closed:
+            fail(503, "Runner đang dừng", "runner_closed")
+        if tid in self.tasks and not self.tasks[tid].done():
+            fail(409, "Ticket đang chạy hoặc đang xếp hàng", "ticket_busy")
+        self.tasks[tid] = asyncio.create_task(self.execute(tid, graph, ctx, value))
+
+    async def execute(self, tid: str, graph: Any, ctx: RunContext, value: Any) -> None:
+        retain = False
+        try:
+            await self.acquire(tid, ctx)
+            await ctx.git.exclude_attachments()
+            await ctx.status("RUNNING")
+            await graph.ainvoke(value, self.config(tid, ctx))
+            snapshot = await graph.aget_state(self.config(tid, ctx))
+            interrupts = [i for task in snapshot.tasks for i in task.interrupts]
+            if interrupts:
+                payload = interrupts[0].value
+                kind = payload["kind"]
+                await ctx.status(
+                    "WAITING_USER_CONFIRM" if kind == "human_confirm" else "WAITING_USER_INPUT",
+                    payload["node_id"],
+                )
+                retain = kind == "human_confirm" or bool(snapshot.values.get("wrote_files"))
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            # Never persist runtime exception details, which can contain provider credentials.
+            reason = (
+                "Native adapter bị khóa: chưa xác minh công cụ chỉ chạy qua permission guard. "
+                "Cần client-only routing hoặc sandbox đã kiểm chứng."
+                if isinstance(error, RuntimePolicyError)
+                else f"Workflow thất bại ({type(error).__name__}); xem log runtime/Git đã lọc"
+            )
+            await ctx.emit("error", reason)
+            await self.checkpoint_error(graph, ctx, reason)
+            await ctx.status("FAILED", ctx.node_id, result={"error": reason})
+            async with self.sessions() as db:
+                await resolve_gate(db, tid, "FAILED", events=self.events)
+        finally:
+            if not retain:
+                self.release(tid)
+                await self.pool.close_ticket(tid)
+            self.tasks.pop(tid, None)
+
+    async def start(self, tid: str, user: Any) -> None:
+        async with self.action_locks.setdefault(tid, asyncio.Lock()):
+            ticket = await self.authorize(tid, user)
+            if ticket.status != "OPEN":
+                fail(409, "Chỉ start ticket OPEN", "invalid_ticket_status")
+            graph, ctx, ticket = await self.load(tid)
+            self.schedule(
+                tid,
+                graph,
+                ctx,
+                {
+                    "ticket_id": tid,
+                    "project_id": ticket.project_id,
+                    "workspace_path": str(ctx.git.workspace),
+                    "title": ticket.title,
+                    "description": ticket.description,
+                    "number": ticket.number,
+                    "outputs": [],
+                    "user_inputs": [],
+                    "last_route": {},
+                    "modified_files": [],
+                    "iteration": {},
+                    "cursors": {},
+                    "gate_counts": {},
+                    "release": None,
+                    "approval": False,
+                    "wrote_files": False,
+                    "error": None,
+                },
+            )
+
+    async def resume(self, tid: str, user: Any, value: dict[str, Any], expected: str) -> None:
+        async with self.action_locks.setdefault(tid, asyncio.Lock()):
+            ticket = await self.authorize(tid, user, confirm=expected == "WAITING_USER_CONFIRM")
+            if ticket.status != expected:
+                fail(409, "Ticket không chờ thao tác này", "invalid_ticket_status")
+            # gate_waiting can reach the browser just before ainvoke finishes saving its interrupt.
+            previous = self.tasks.get(tid)
+            if previous:
+                await asyncio.shield(previous)
+            graph, ctx, _ = await self.load(tid)
+            snapshot = await graph.aget_state(self.config(tid, ctx))
+            if not any(task.interrupts for task in snapshot.tasks):
+                fail(409, "Checkpoint không có gate đang chờ", "missing_interrupt")
+            value["user"] = user_identity(user)
+            self.schedule(tid, graph, ctx, Command(resume=value))
+
+    async def reply(self, tid: str, text: str, user: Any) -> None:
+        if not text.strip():
+            fail(422, "Câu trả lời không được rỗng", "empty_reply")
+        await self.resume(tid, user, {"text": text}, "WAITING_USER_INPUT")
+
+    async def confirm(self, tid: str, approved: bool, feedback: str | None, user: Any) -> None:
+        await self.resume(
+            tid, user, {"approved": approved, "feedback": feedback or ""}, "WAITING_USER_CONFIRM"
+        )
+
+    async def retry(self, tid: str, user: Any) -> None:
+        async with self.action_locks.setdefault(tid, asyncio.Lock()):
+            ticket = await self.authorize(tid, user)
+            if ticket.status != "FAILED":
+                fail(409, "Chỉ retry ticket FAILED", "invalid_ticket_status")
+            graph, ctx, _ = await self.load(tid)
+            snapshot = await graph.aget_state(self.config(tid, ctx))
+            if not snapshot.values or not snapshot.next:
+                fail(409, "Không có checkpoint để retry", "missing_checkpoint")
+            await graph.aupdate_state(self.config(tid, ctx), {"error": None})
+            self.schedule(tid, graph, ctx, None)
+
+    async def cancel(self, tid: str, user: Any) -> None:
+        async with self.action_locks.setdefault(tid, asyncio.Lock()):
+            ticket = await self.authorize(tid, user)
+            if ticket.status in {"COMPLETED", "CANCELLED"}:
+                fail(409, "Ticket đã kết thúc", "invalid_ticket_status")
+            task = self.tasks.get(tid)
+            if task:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            await self.pool.close_ticket(tid)
+            self.release(tid)
+            # Cancellation must work even when an agent was disabled/deleted or its snapshot
+            # can no longer compile. It needs ticket/project identity, not a runnable graph.
+            async with self.sessions() as db:
+                project = await db.get(Project, ticket.project_id)
+                ctx = self.context(ticket, project)
+            async with self.sessions() as db:
+                await resolve_gate(db, tid, "CANCELLED", events=self.events)
+            await ctx.status("CANCELLED")
+
+    async def state(self, tid: str) -> dict[str, Any]:
+        # Inspect persisted state independently of current agent availability. Disabling
+        # an agent must not make an old ticket's chat/state/WebSocket unreadable.
+        async with self.sessions() as db:
+            ticket = await db.get(Ticket, tid)
+            if ticket is None:
+                fail(404, "Không tìm thấy ticket", "not_found")
+            version = await db.scalar(
+                select(WorkflowVersion).where(
+                    WorkflowVersion.workflow_id == ticket.workflow_id,
+                    WorkflowVersion.version == ticket.workflow_version,
+                )
+            )
+        stored = await self.checkpointer.aget_tuple({"configurable": {"thread_id": tid}})
+        values = stored.checkpoint.get("channel_values", {}) if stored else {}
+        statuses = {n["id"]: "idle" for n in version.graph.get("nodes", [])} if version else {}
+        statuses.update(values.get("node_statuses", {}))
+        for n in values.get("last_route", {}):
+            statuses[n] = "done"
+        for output in values.get("outputs", []):
+            statuses[output["node_id"]] = "done"
+        waiting = None
+        for _, channel, interrupts in stored.pending_writes or [] if stored else []:
+            if channel == "__interrupt__":
+                for item in interrupts:
+                    payload = item.value
+                    waiting = {"kind": payload["kind"], "node_id": payload["node_id"], "payload": payload}
+                    statuses[payload["node_id"]] = "waiting"
+        if ticket.current_node_id:
+            statuses[ticket.current_node_id] = (
+                "running"
+                if ticket.status == "RUNNING"
+                else "failed"
+                if ticket.status == "FAILED"
+                else "waiting"
+                if ticket.status.startswith("WAITING")
+                else "done"
+            )
+        if ticket.status in {"CANCELLED", "COMPLETED", "FAILED"}:
+            waiting = None
+        return {
+            "status": ticket.status,
+            "current_node_id": ticket.current_node_id,
+            "waiting": waiting,
+            "node_statuses": statuses,
+        }
+
+    async def close(self) -> None:
+        self.closed = True
+        for task in list(self.tasks.values()):
+            task.cancel()
+        await asyncio.gather(*list(self.tasks.values()), return_exceptions=True)
+        for tid in list(self.owned):
+            self.release(tid)
+        for tid in self.contexts:
+            await self.pool.close_ticket(tid)
