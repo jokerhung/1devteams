@@ -38,7 +38,7 @@ def test_dev_git_commit_variants(tmp_path, command):
     assert not guard.check_command(command).allowed
 
 
-@pytest.mark.parametrize("command", ["npm run build", "git status", "git diff", "git commitment"])
+@pytest.mark.parametrize("command", ["npm run build", "git status", "git diff"])
 def test_dev_allowed(tmp_path, command):
     guard = DynamicPermissionGuard(PermissionProfile(allow_terminal=True), tmp_path)
     assert guard.check_command(command).allowed

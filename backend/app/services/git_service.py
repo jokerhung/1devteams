@@ -66,8 +66,15 @@ class GitService:
             "commit",
             "push",
             "remote",
+            "stash",
         }:
             raise ValueError("Git operation not permitted")
+        if args[0] == "stash" and (
+            len(args) != 5
+            or args[1:4] != ("push", "-u", "-m")
+            or not re.fullmatch(r"aiteams-ticket-\d+", args[4])
+        ):
+            raise ValueError("Only ticket recovery stash is permitted")
         if args[0] == "remote" and (
             len(args) != 3
             or args[1] != "get-url"

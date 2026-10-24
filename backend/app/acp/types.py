@@ -54,6 +54,9 @@ class AgentRuntimeConfig(BaseModel):
     handle: str
     runtime: RuntimeType
     model: str | None = None
+    fallback_model: str | None = None
+    fallback_runtime: RuntimeType | None = None
+    fallback_agent_id: str | None = None
     system_prompt: str = ""
     permission_profile: PermissionProfile = Field(default_factory=PermissionProfile)
     env: dict[str, str] = Field(default_factory=dict, repr=False, exclude=True)

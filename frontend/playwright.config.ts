@@ -24,7 +24,7 @@ export default defineConfig({
     {
       command: `${process.env.E2E_PYTHON || (process.platform === "win32" ? "..\\backend\\.venv\\Scripts\\python.exe" : "../backend/.venv/bin/python")} e2e/backend.py`,
       url: "http://127.0.0.1:8062/api/health",
-      reuseExistingServer: false,
+      reuseExistingServer: process.env.E2E_REUSE_SERVERS === "1",
       timeout: 60000,
       env: { ACP_FAKE_SCENARIO: "bugfix_happy_path" },
     },
@@ -32,7 +32,7 @@ export default defineConfig({
       command:
         "node node_modules/next/dist/bin/next dev --turbopack --hostname 127.0.0.1 --port 3062",
       url: "http://127.0.0.1:3062/login",
-      reuseExistingServer: false,
+      reuseExistingServer: process.env.E2E_REUSE_SERVERS === "1",
       timeout: 120000,
       env: { BACKEND_URL: "http://127.0.0.1:8062", NEXT_DIST_DIR: ".next-e2e" },
     },

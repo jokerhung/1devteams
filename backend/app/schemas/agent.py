@@ -27,6 +27,8 @@ class AgentCreate(Input):
     api_params: APIParameters = Field(default_factory=APIParameters)
     model: str | None = Field(default=None, max_length=100)
     fallback_model: str | None = Field(default=None, max_length=100)
+    fallback_runtime: RuntimeType | None = None
+    fallback_agent_id: str | None = Field(default=None, pattern=r"^[0-9a-fA-F-]{36}$")
     permission_profile: Profile = "read_only"
     icon: str = Field(default="🤖", max_length=8)
     logo_url: str | None = Field(default=None, max_length=300, pattern=r"^/api/assets/logos/[a-f0-9-]+\.png$")
@@ -50,6 +52,8 @@ class AgentPatch(Input):
     api_params: APIParameters | None = None
     model: str | None = Field(default=None, max_length=100)
     fallback_model: str | None = Field(default=None, max_length=100)
+    fallback_runtime: RuntimeType | None = None
+    fallback_agent_id: str | None = Field(default=None, pattern=r"^[0-9a-fA-F-]{36}$")
     permission_profile: Profile | None = None
     icon: str | None = Field(default=None, max_length=8)
     logo_url: str | None = Field(default=None, max_length=300, pattern=r"^/api/assets/logos/[a-f0-9-]+\.png$")
@@ -70,6 +74,8 @@ class AgentOut(Record):
     api_params: dict
     model: str | None
     fallback_model: str | None
+    fallback_runtime: RuntimeType | None = None
+    fallback_agent_id: str | None = None
     permission_profile: PermissionProfile
     icon: str
     logo_url: str | None

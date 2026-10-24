@@ -89,6 +89,7 @@ class ApiAgentSession:
     async def _run(self, text: str) -> None:
         assert self._client and self.cfg.base_url and self.cfg.api_key
         result = ""
+        usage_total: Json = {}
         try:
             messages = self._messages(text)
             url = completion_url(self.cfg.base_url)
@@ -153,6 +154,7 @@ class ApiAgentSession:
                         if "error" in chunk:
                             raise ValueError("API stream returned an error")
                         if usage := chunk.get("usage"):
+                            usage_total = usage
                             await self._event(
                                 "log",
                                 f"tokens: prompt {usage.get('prompt_tokens', 0)} "
@@ -189,6 +191,7 @@ class ApiAgentSession:
                 **PromptResult(stop_reason=finish, full_text=result).model_dump(),
                 model_effective=self.cfg.model,
                 turn_interrupted=self.turn_interrupted,
+                usage=usage_total,
             )
         except asyncio.CancelledError:
             await self._event(

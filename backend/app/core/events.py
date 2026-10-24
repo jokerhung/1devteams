@@ -1,13 +1,16 @@
 """In-process event bus. User and ticket websocket consumers can subscribe in later phases."""
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
+from uuid import uuid4
 
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func, select, update
 
+from app.core.config import Settings
 from app.db.models import Ticket, TicketMessage
 
 
@@ -16,10 +19,43 @@ class EventBus:
         self._subscribers: dict[str, set[asyncio.Queue[dict[str, Any]]]] = {}
         self.sessions = sessions
         self._locks: dict[str, asyncio.Lock] = {}
+        self.settings: Settings | None = None
 
     async def publish(self, channel: str, event: dict[str, Any]) -> None:
         if self.sessions and channel.startswith("tickets/"):
             ticket_id = channel.split("/", 1)[1]
+            if self.settings:
+                from app.acp.security import scrub_data
+
+                event = scrub_data(event)
+                encoded = json.dumps(event, ensure_ascii=False)
+                if (
+                    len(encoded) > self.settings.max_event_chars
+                    and event.get("event_type") != "agent_turn_end"
+                ):
+                    folder = self.settings.data_dir.resolve() / "blobs/events" / ticket_id
+                    await asyncio.to_thread(folder.mkdir, parents=True, exist_ok=True)
+                    blob_id = str(uuid4())
+                    await asyncio.to_thread(
+                        (folder / (blob_id + ".json")).write_text, encoded, encoding="utf-8"
+                    )
+                    event = {
+                        k: event[k]
+                        for k in (
+                            "event_type",
+                            "sender_type",
+                            "sender_name",
+                            "sender_id",
+                            "run_id",
+                            "node_id",
+                        )
+                        if k in event
+                    }
+                    event["content"] = encoded[: self.settings.max_event_chars // 2] + "\n[truncated]"
+                    event["metadata"] = {
+                        "truncated": True,
+                        "full_output_url": f"/api/tickets/{ticket_id}/event-blobs/{blob_id}",
+                    }
             async with self._locks.setdefault(ticket_id, asyncio.Lock()):
                 async with self.sessions() as db:
                     from app.services.ticket_service import add_message

@@ -35,6 +35,15 @@ export function AgentForm({
     agent?.runtime || "claude-code",
   );
   const [model, setModel] = useState(agent?.model || "");
+  const [fallbackModel, setFallbackModel] = useState(
+    agent?.fallback_model || "",
+  );
+  const [fallbackRuntime, setFallbackRuntime] = useState(
+    agent?.fallback_runtime || "",
+  );
+  const [fallbackAgent, setFallbackAgent] = useState(
+    agent?.fallback_agent_id || "",
+  );
   const [baseUrl, setBaseUrl] = useState(agent?.base_url || "");
   const [apiKey, setApiKey] = useState("");
   const [preset, setPreset] = useState<Preset>(agent ? "custom" : "read_only");
@@ -180,6 +189,9 @@ export function AgentForm({
               description,
               runtime,
               model: model || null,
+              fallback_model: fallbackModel || null,
+              fallback_runtime: fallbackRuntime || null,
+              fallback_agent_id: fallbackAgent || null,
               base_url: custom ? baseUrl.replace(/\/$/, "") : null,
               system_prompt: prompt,
               permission_profile: permission,
@@ -200,7 +212,7 @@ export function AgentForm({
                       !persisted.description
                     ) &&
                     JSON.stringify(value) !==
-                      JSON.stringify(persisted[key as keyof Agent]),
+                      JSON.stringify(persisted[key as keyof Agent] ?? null),
                 ),
               );
               if (Object.keys(changed).length) {
@@ -447,6 +459,42 @@ export function AgentForm({
             </select>
           </label>
         )}
+        <details className="rounded border border-stone-200 p-3 text-sm">
+          <summary className="cursor-pointer">
+            Fallback khi model quá tải
+          </summary>
+          <p className="my-2 text-xs text-stone-500">
+            Thử lại sau 30s, 60s rồi chuyển cấu hình dự phòng. Bỏ trống để tắt
+            fallback.
+          </p>
+          <label className="field">
+            Model dự phòng
+            <input
+              value={fallbackModel}
+              onChange={(e) => setFallbackModel(e.target.value)}
+            />
+          </label>
+          <label className="field">
+            Runtime dự phòng
+            <select
+              value={fallbackRuntime}
+              onChange={(e) => setFallbackRuntime(e.target.value)}
+            >
+              <option value="">Cùng runtime</option>
+              <option value="claude-code">Claude Code</option>
+              <option value="codex">Codex</option>
+              <option value="openai-api">OpenAI API (cần agent riêng)</option>
+            </select>
+          </label>
+          <label className="field">
+            ID agent API dự phòng
+            <input
+              value={fallbackAgent}
+              onChange={(e) => setFallbackAgent(e.target.value)}
+              placeholder="Chỉ dành cho vai trò text-only"
+            />
+          </label>
+        </details>
         {connection && (
           <p
             role="status"

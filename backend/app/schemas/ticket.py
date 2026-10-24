@@ -53,6 +53,13 @@ class MessageOut(Record):
     seq: int
 
 
+class HistoryOut(Input):
+    groups: list[dict[str, Any]]
+    before_seq: int | None
+    has_more: bool
+    last_seq: int
+
+
 class LogOut(Input):
     seq: int
     run_id: UUID | None

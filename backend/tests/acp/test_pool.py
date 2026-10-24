@@ -4,11 +4,28 @@ import httpx
 import pytest
 
 from app.acp.api_session import ApiAgentSession
-from app.acp.pool import ACPProcessPool
+from app.acp.client import ACPSession
+from app.acp.pool import ACPProcessPool, create_session
 from app.acp.types import AgentRuntimeConfig
 from app.acp.url_policy import URLPolicy
+from app.core.config import Settings
 from app.core.events import EventBus
 from tests.fakes.fake_openai import app
+
+
+@pytest.mark.parametrize("trusted", [False, True])
+def test_native_trust_is_controlled_by_host_settings(tmp_path, trusted):
+    settings = Settings(_env_file=None, jwt_secret="test", trusted_native_acp=trusted)
+    cfg = AgentRuntimeConfig(
+        agent_id="native",
+        handle="@custom",
+        runtime="claude-code",
+        env={"TRUSTED_NATIVE_ACP": "true"},
+    )
+    session = create_session(cfg, tmp_path, settings)
+    assert isinstance(session, ACPSession)
+    assert session.trusted_native is trusted
+    assert not session.client_tools_only and not session.diagnostic
 
 
 @pytest.fixture

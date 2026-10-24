@@ -48,8 +48,8 @@ export default function LoginPage() {
           }}
         >
           <label className="field">
-            Email
-            <input name="email" type="email" autoComplete="username" required />
+            Tài khoản hoặc email
+            <input name="email" type="text" autoComplete="username" required />
           </label>
           <label className="field">
             Mật khẩu

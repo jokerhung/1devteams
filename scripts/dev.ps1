@@ -49,9 +49,16 @@ if (-not (Test-Path -LiteralPath (Join-Path $backendRoot '.env')) -and -not $env
     throw 'Create backend/.env from backend/.env.example and set JWT_SECRET.'
 }
 foreach ($port in @($backendPort, $frontendPort)) {
+    $proxyIds = @()
     $ownerIds = @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
         Select-Object -ExpandProperty OwningProcess -Unique)
     foreach ($ownerId in $ownerIds) {
+        if ((Get-Process -Id $ownerId -ErrorAction SilentlyContinue).ProcessName -eq 'tailscaled') {
+            # Tailscale Serve owns the tailnet address and forwards to our loopback listener.
+            $proxyIds += $ownerId
+            Write-Host "Keeping Tailscale proxy on port $port."
+            continue
+        }
         if ($ownerId -le 4 -or $ownerId -eq $PID) {
             throw "Cannot stop protected process $ownerId using port $port."
         }
@@ -63,7 +70,8 @@ foreach ($port in @($backendPort, $frontendPort)) {
         }
     }
     $portDeadline = (Get-Date).AddSeconds(10)
-    while (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
+    while (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
+        Where-Object { $_.OwningProcess -notin $proxyIds }) {
         if ((Get-Date) -ge $portDeadline) {
             throw "Port $port is still in use after stopping its previous process."
         }

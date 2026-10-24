@@ -23,6 +23,15 @@ logger = logging.getLogger(__name__)
 BinResolver = Callable[[RuntimeType], list[str]]
 
 
+def is_provider_variable(name: str) -> bool:
+    return name.upper().startswith(("ANTHROPIC_", "OPENAI_")) or name.upper() in {
+        "CODEX_API_KEY",
+        "CODEX_CONFIG",
+        "MODEL_PROVIDER",
+        "DEFAULT_AUTH_REQUEST",
+    }
+
+
 class RuntimePolicyError(RuntimeError):
     pass
 
@@ -48,6 +57,9 @@ class ACPSession:
         timeout: float | None = None,
         client_tools_only: bool = False,
         diagnostic: bool = False,
+        trusted_native: bool = False,
+        inherit_provider_env: bool = True,
+        provider_env: dict[str, str] | None = None,
     ) -> None:
         self.cfg = cfg.model_copy(deep=True)
         self.workspace = workspace.resolve()
@@ -57,6 +69,12 @@ class ACPSession:
         # An operator must establish client-only tool routing for their adapter. Capabilities alone
         # are not evidence. The diagnostic escape hatch is for disposable real-ACP tests only.
         self.client_tools_only, self.diagnostic = client_tools_only, diagnostic
+        # Explicit host-operator opt-in. This is not evidence of guard coverage or a sandbox.
+        self.trusted_native = trusted_native
+        self.inherit_provider_env = inherit_provider_env
+        self.provider_env = dict(provider_env or {})
+        self._scrub_cfg = self.cfg.model_copy(deep=True)
+        self._scrub_cfg.env.update(self.provider_env)
         self.process: asyncio.subprocess.Process | None = None
         self.rpc: JsonRpcConnection | None = None
         self.session_id: str | None = None
@@ -75,7 +93,10 @@ class ACPSession:
         self._closed = False
         self._first_prompt = True
         self.handlers = ClientRequestHandlers(
-            DynamicPermissionGuard(cfg.permission_profile, self.workspace, cfg.handle), self._emit
+            DynamicPermissionGuard(
+                cfg.permission_profile, self.workspace, cfg.handle, trusted_native=trusted_native
+            ),
+            self._emit,
         )
 
     @property
@@ -92,12 +113,32 @@ class ACPSession:
             return
         if self._closed:
             raise RuntimeError("Session has been closed")
-        if not self.client_tools_only and not self.diagnostic:
+        if not self.client_tools_only and not self.diagnostic and not self.trusted_native:
             raise RuntimePolicyError(
                 "Native adapter tool approval coverage is unverified; require client-only routing or an "
                 "external sandbox. Diagnostic mode is restricted to disposable workspaces."
             )
-        env = os.environ | self.cfg.env
+        if self.trusted_native:
+            logger.warning(
+                "Trusted native ACP enabled for agent=%s: native tools may bypass the client guard",
+                self.cfg.handle,
+            )
+        env = (
+            {
+                key: value
+                for key, value in os.environ.items()
+                if self.inherit_provider_env or not is_provider_variable(key)
+            }
+            | self.provider_env
+            | self.cfg.env
+        )
+        self._scrub_cfg.env.update(
+            {
+                key: value
+                for key, value in env.items()
+                if is_provider_variable(key) and any(part in key.upper() for part in ("KEY", "TOKEN", "AUTH"))
+            }
+        )
         if self.cfg.runtime == "codex":
             env["INITIAL_AGENT_MODE"] = "read-only"
         options = {"creationflags": 512} if sys.platform == "win32" else {"start_new_session": True}
@@ -181,7 +222,7 @@ class ACPSession:
             raise
 
     async def _emit(self, event: ACPStreamEvent) -> None:
-        safe = ACPStreamEvent.model_validate(scrub_data(event.model_dump(), self.cfg))
+        safe = ACPStreamEvent.model_validate(scrub_data(event.model_dump(), self._scrub_cfg))
         await self._queue.put(safe)
 
     async def _drain_stderr(self) -> None:
@@ -203,7 +244,7 @@ class ACPSession:
             self._record_stderr(buffer)
 
     def _record_stderr(self, line: bytes) -> None:
-        safe = scrub(line.decode("utf-8", errors="replace").rstrip(), self.cfg)
+        safe = scrub(line.decode("utf-8", errors="replace").rstrip(), self._scrub_cfg)
         self._stderr.append(safe)
         logger.debug("ACP stderr agent=%s %s", self.cfg.handle, safe)
 
@@ -270,6 +311,19 @@ class ACPSession:
         self.turn_interrupted = False
         self.last_used = time.monotonic()
         self._queue = asyncio.Queue()
+        if self.trusted_native:
+            await self._emit(
+                ACPStreamEvent(
+                    agent_handle=self.cfg.handle,
+                    event_type="log",
+                    content=(
+                        "Chế độ native tin cậy đang bật trên máy chủ. Công cụ native có thể chạy "
+                        "trực tiếp với quyền tài khoản hệ điều hành; permission profile chưa bảo đảm "
+                        "kiểm soát toàn bộ công cụ của adapter."
+                    ),
+                    metadata={"runtime_policy": "trusted_native", "guard_coverage_verified": False},
+                )
+            )
         self.modified_files.clear()
         self.handlers.modified_files.clear()
         prefix = (
@@ -321,7 +375,7 @@ class ACPSession:
                     ACPStreamEvent(
                         agent_handle=self.cfg.handle,
                         event_type="error",
-                        content=scrub(str(error), self.cfg),
+                        content=scrub(str(error), self._scrub_cfg),
                         metadata={"stderr": list(self._stderr)},
                     )
                 )

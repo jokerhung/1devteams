@@ -42,6 +42,8 @@ class Agent(Entity, Base):
     api_params: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     model: Mapped[str | None] = mapped_column(String(100))
     fallback_model: Mapped[str | None] = mapped_column(String(100))
+    fallback_runtime: Mapped[str | None] = mapped_column(String(20))
+    fallback_agent_id: Mapped[str | None] = mapped_column(Uuid(as_uuid=False))
     permission_profile: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     icon: Mapped[str] = mapped_column(String(8), default="🤖")
     logo_url: Mapped[str | None] = mapped_column(String(300))
@@ -142,6 +144,7 @@ class TicketMessage(Entity, Base):
     __table_args__ = (
         UniqueConstraint("ticket_id", "seq"),
         Index("ix_message_ticket_seq", "ticket_id", "seq"),
+        Index("ix_message_ticket_run_seq", "ticket_id", "run_id", "seq"),
     )
     ticket_id: Mapped[str] = mapped_column(ForeignKey("tickets.id", ondelete="CASCADE"), index=True)
     run_id: Mapped[str | None] = mapped_column(Uuid(as_uuid=False))
@@ -153,6 +156,19 @@ class TicketMessage(Entity, Base):
     content: Mapped[str] = mapped_column(Text, default="")
     event_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
     seq: Mapped[int] = mapped_column(BigInteger)
+
+
+class ChatHistoryEntry(Entity, Base):
+    __tablename__ = "chat_history_entries"
+    __table_args__ = (
+        UniqueConstraint("ticket_id", "entry_key"),
+        Index("ix_chat_history_ticket_seq", "ticket_id", "first_seq"),
+    )
+    ticket_id: Mapped[str] = mapped_column(ForeignKey("tickets.id", ondelete="CASCADE"))
+    entry_key: Mapped[str] = mapped_column(String(100))
+    first_seq: Mapped[int] = mapped_column(BigInteger)
+    last_seq: Mapped[int] = mapped_column(BigInteger)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
 
 
 class Attachment(Entity, Base):
@@ -191,3 +207,20 @@ class UserPreference(Timestamps, Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     key: Mapped[str] = mapped_column(String(60), primary_key=True)
     value: Mapped[Any] = mapped_column(JSON)
+
+
+class AuditLog(Entity, Base):
+    __tablename__ = "audit_logs"
+    user_id: Mapped[str | None] = mapped_column(Uuid(as_uuid=False), index=True)
+    action: Mapped[str] = mapped_column(String(60), index=True)
+    target: Mapped[str] = mapped_column(String(100))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    ip: Mapped[str | None] = mapped_column(String(100))
+
+
+class TerminalAudit(Entity, Base):
+    __tablename__ = "terminal_audit"
+    user_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), index=True)
+    project_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), index=True)
+    action: Mapped[str] = mapped_column(String(20))
+    data: Mapped[str] = mapped_column(Text, default="")

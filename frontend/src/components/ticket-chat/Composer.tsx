@@ -4,6 +4,7 @@ import { Paperclip, ArrowUp } from "lucide-react";
 import { toast } from "sonner";
 import type { Agent } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
+import { clientId } from "@/lib/client-id";
 import { useChatPrefs } from "@/stores/chat-prefs";
 import { useChatDrafts } from "@/stores/chat-drafts";
 import { MentionPicker } from "./MentionPicker";
@@ -17,6 +18,7 @@ export function Composer({
   agents,
   waiting,
   disabled,
+  sendDisabled = false,
   maxFiles,
   maxMb,
   onSend,
@@ -27,6 +29,7 @@ export function Composer({
   agents: Agent[];
   waiting: Waiting | null;
   disabled: boolean;
+  sendDisabled?: boolean;
   maxFiles: number;
   maxMb: number;
   onSend: (text: string, files: Attachment[]) => Promise<void>;
@@ -80,7 +83,7 @@ export function Composer({
     );
   }
   function addFiles(incoming: FileList | File[]) {
-    if (disabled || busy) return;
+    if (disabled || sendDisabled || busy) return;
     const state = useChatDrafts.getState();
     const accepted = [];
     let count = (state.files[key] || []).length;
@@ -93,7 +96,7 @@ export function Composer({
         toast.error(`${file.name} vượt quá ${maxMb}MB`);
         continue;
       }
-      accepted.push({ key: crypto.randomUUID(), file, progress: 0 });
+      accepted.push({ key: clientId(), file, progress: 0 });
       count++;
     }
     state.setFiles(key, [...(state.files[key] || []), ...accepted]);
@@ -144,6 +147,7 @@ export function Composer({
   async function submit() {
     if (
       disabled ||
+      sendDisabled ||
       busy ||
       files.some((f) => !f.attachment) ||
       (!text.trim() && !files.length)
@@ -271,6 +275,7 @@ export function Composer({
           aria-label="Gửi tin nhắn"
           disabled={
             disabled ||
+            sendDisabled ||
             busy ||
             files.some((f) => !f.attachment) ||
             (!text.trim() && !files.length)

@@ -1,5 +1,7 @@
 "use client";
 import { useState } from "react";
+import dynamic from "next/dynamic";
+const RemoteTerminal = dynamic(() => import("./RemoteTerminal"), { ssr: false });
 import type { Agent } from "@/lib/types";
 import { Modal } from "@/components/ui-app/primitives";
 import { WorkflowReadonlyGraph } from "@/components/workflow/WorkflowReadonlyGraph";
@@ -12,6 +14,7 @@ export function RightDrawer({
   groups,
   statuses,
   onClose,
+  projectId,
 }: {
   graph: WorkflowGraph;
   version: number;
@@ -19,6 +22,7 @@ export function RightDrawer({
   groups: MessageGroup[];
   statuses: RuntimeState["node_statuses"];
   onClose: () => void;
+  projectId: string;
 }) {
   const [tab, setTab] = useState("progress");
   return (
@@ -60,10 +64,7 @@ export function RightDrawer({
           </ol>
         </>
       ) : (
-        <p className="py-10 text-center text-xs text-stone-500">
-          Terminal tương tác sẽ có ở Phase 7. Output hiện tại nằm trong từng
-          lượt agent.
-        </p>
+        <RemoteTerminal projectId={projectId} />
       )}
     </Modal>
   );

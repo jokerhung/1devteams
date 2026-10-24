@@ -36,13 +36,13 @@ export function ToolCallChips({ tools }: { tools: ChatEvent[] }) {
 }
 export function TerminalBlock({ event }: { event: ChatEvent }) {
   return (
-    <details className="my-2 overflow-hidden rounded-lg bg-stone-950 p-3 font-mono text-[11px] text-stone-100">
-      <summary className="cursor-pointer">
+    <details className="my-2 overflow-hidden rounded-lg border border-stone-200 font-mono text-[11px]">
+      <summary className="cursor-pointer break-all p-3 text-stone-600">
         $ {String(event.metadata.command || "Terminal")}{" "}
         {event.metadata.exit_code != null &&
           `· exit ${event.metadata.exit_code}`}
       </summary>
-      <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap">
+      <pre className="max-h-80 overflow-auto whitespace-pre-wrap bg-stone-950 p-3 text-stone-100">
         {event.content}
       </pre>
     </details>

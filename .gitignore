@@ -20,3 +20,4 @@ spike_logs/
 *.log
 .dev-logs/
 backend/data/
+backups/

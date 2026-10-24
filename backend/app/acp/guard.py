@@ -54,10 +54,18 @@ def command_tokens(command: str) -> list[str]:
 
 
 class DynamicPermissionGuard:
-    def __init__(self, profile: PermissionProfile, workspace: Path, agent_handle: str = "") -> None:
+    def __init__(
+        self,
+        profile: PermissionProfile,
+        workspace: Path,
+        agent_handle: str = "",
+        *,
+        trusted_native: bool = False,
+    ) -> None:
         self.profile = profile.model_copy(deep=True)
         self.workspace = workspace.resolve()
         self.agent_handle = agent_handle
+        self.trusted_native = trusted_native
 
     def decision(self, action: str, allowed: bool, reason: str) -> Decision:
         logger.info(
@@ -106,6 +114,25 @@ class DynamicPermissionGuard:
         if not self.profile.allow_terminal:
             return self.decision("execute", False, "Profile forbids terminal")
         text = " ".join([command, *(args or [])])
+        if self.trusted_native and not self.profile.allowed_commands:
+            # Host-authorized native execution is not a sandbox. Keep best-effort
+            # deny checks, but do not claim shell parsing can enforce isolation.
+            if re.search(
+                r"(?i)\bgit(?:\.exe)?\s+(?:-[^\s]+\s+)*(?:add|commit|push|merge|reset|clean|checkout|"
+                r"rebase|cherry-pick|apply|restore|update-ref|config|init|clone)\b",
+                text,
+            ):
+                return self.decision("execute", False, "Git mutations are reserved for backend GitService")
+            for blocked in self.profile.blocked_commands:
+                parts = blocked.split()
+                if parts and re.search(
+                    r"(?i)(?<![\w-])" + r"\s+".join(re.escape(part) for part in parts) + r"(?![\w-])",
+                    text,
+                ):
+                    return self.decision("execute", False, f"Blocked command: {blocked}")
+            return self.decision("execute", True, "Allowed by host trusted-native policy (not sandboxed)")
+        if re.search(r"(?:^|\s)-c(?:\s|\S)", text):
+            return self.decision("execute", False, "Inline command configuration is not permitted")
         if re.search(r"(?i)\balias\.|--exec-path|--config-env", text):
             return self.decision("execute", False, "Git command rewriting is not permitted")
         # Expansion, redirection and wrappers cannot be safely inspected as plain prefixes.
@@ -127,8 +154,38 @@ class DynamicPermissionGuard:
                     "eval",
                     "exec",
                     "call",
+                    "python",
+                    "python3",
+                    "python3.11",
+                    "python3.12",
+                    "node",
+                    "ruby",
+                    "perl",
+                    "wscript",
+                    "cscript",
+                    "mshta",
+                    "rundll32",
+                    "base64",
+                    "source",
+                    ".",
+                    "command",
+                    "sudo",
+                    "doas",
+                    "start",
+                    "xargs",
+                    "find",
+                    "ssh",
+                    "curl",
+                    "wget",
                 }:
                     return self.decision("execute", False, "Uninspectable command wrapper")
+                if tokens[0] == "git" and (
+                    len(tokens) < 2
+                    or tokens[1]
+                    not in {"status", "diff", "log", "show", "rev-parse", "ls-files", "blame", "shortlog"}
+                    or any(t.startswith(("--output", "--ext-diff", "--textconv")) for t in tokens)
+                ):
+                    return self.decision("execute", False, "Only read-only Git inspection is permitted")
                 if (
                     tokens[0] == "git"
                     and len(tokens) > 1

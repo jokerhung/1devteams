@@ -3,6 +3,7 @@ import unicodedata
 
 from sqlalchemy import select, update
 
+from app.acp.security import scrub, scrub_data
 from app.core.deps import fail
 from app.db.base import new_id, now
 from app.db.models import Project, Ticket, TicketMessage, Workflow, WorkflowVersion
@@ -109,15 +110,18 @@ async def add_message(
         **({"id": message_id} if message_id else {}),
         ticket_id=ticket_id,
         seq=seq,
-        content=content,
+        content=scrub(content),
         sender_type=sender_type,
         sender_id=sender_id,
         sender_name=sender_name,
         event_type=event_type,
-        event_metadata=metadata or {},
+        event_metadata=scrub_data(metadata or {}),
         run_id=run_id,
         node_id=node_id,
     )
     db.add(message)
     await db.flush()
+    from app.services.chat_history import record_summary
+
+    await record_summary(db, message)
     return message

@@ -1,4 +1,5 @@
 import type { Node, Edge, Viewport } from "@xyflow/react";
+import { clientId } from "@/lib/client-id";
 import type { components } from "@/lib/api/schema";
 export type WorkflowGraph = components["schemas"]["Graph"];
 export type NodeKind = NonNullable<WorkflowGraph["nodes"]>[number]["type"];
@@ -62,4 +63,4 @@ export function graphKey(state: Snapshot) {
   return JSON.stringify({ ...serialize(state), viewport: defaultViewport });
 }
 export const nodeId = () =>
-  `n_${crypto.randomUUID().replaceAll("-", "").slice(0, 10)}`;
+  `n_${clientId().replaceAll("-", "").slice(0, 10)}`;

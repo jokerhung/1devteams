@@ -51,6 +51,9 @@ async def seed(db, settings) -> None:
                 display_name=display,
                 role_key=role,
                 runtime=runtime,
+                description="Gợi ý: chọn model nhanh cho BA/Tester."
+                if role in {"BA", "TESTER"}
+                else "Gợi ý: chọn model mạnh cho Developer/Leader.",
                 icon=icon,
                 color=color,
                 permission_profile=PRESETS[preset],

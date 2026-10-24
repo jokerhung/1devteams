@@ -28,6 +28,9 @@ dependencies = [
   "filetype>=1.2,<2",
   "langgraph-checkpoint-postgres>=3.2.0",
   "psycopg[binary,pool]>=3.3.6",
+  "pywinpty>=2,<4 ; sys_platform == 'win32'",
+  "ptyprocess>=0.7,<1 ; sys_platform != 'win32'",
+  "structlog>=25,<27",
 ]
 
 [dependency-groups]
@@ -68,7 +71,7 @@ disallow_incomplete_defs = true
 extra_checks = true
 
 [[tool.mypy.overrides]]
-module = ["filetype"]
+module = ["filetype", "winpty", "ptyprocess"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

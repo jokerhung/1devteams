@@ -1,6 +1,7 @@
 """Executable scripted ACP peer; scenarios are explicit expectations, not an LLM."""
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -22,6 +23,8 @@ def main():
         message = read()
         assert message.get("method") == step["expect"], (message, step)
         params = message.get("params", {})
+        for key, expected in step.get("assert_env", {}).items():
+            assert os.environ.get(key) == expected, key
         for key, expected in step.get("assert_params", {}).items():
             assert params[key] == expected
         if prefix := step.get("assert_prompt_prefix"):

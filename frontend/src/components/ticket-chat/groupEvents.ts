@@ -45,14 +45,32 @@ export function cleanContent(text: string) {
     .replace(/@@ROUTE:[^\n]*/g, "")
     .trim();
 }
-export function groupEvents(events: ChatEvent[]): MessageGroup[] {
-  const groups: MessageGroup[] = [];
+export function groupEvents(
+  events: ChatEvent[],
+  summaries: MessageGroup[] = [],
+): MessageGroup[] {
+  const groups: MessageGroup[] = structuredClone(summaries);
   const turns = new Map<string, TurnGroup>();
   const gates = new Map<string, Gate>();
-  let latest: TurnGroup | undefined;
+  const bases = new Map(summaries.map((group) => [group.id, group]));
+  for (const group of groups) {
+    if (group.type === "turn") {
+      turns.set(group.id, group);
+      if (group.gate) gates.set(group.gate.key, group.gate);
+    }
+  }
+  let latest: TurnGroup | undefined = [...turns.values()].at(-1);
   for (const e of events) {
+    const base = bases.get(e.run_id || e.id);
+    if (base && e.seq <= (base.lastSeq ?? 0)) continue;
     if (e.sender_type === "USER") {
-      groups.push({ type: "user", id: e.id, event: e });
+      groups.push({
+        type: "user",
+        id: e.id,
+        event: e,
+        historySeq: e.seq,
+        lastSeq: e.seq,
+      });
       continue;
     }
     const m = e.metadata || {};
@@ -82,6 +100,8 @@ export function groupEvents(events: ChatEvent[]): MessageGroup[] {
             "🔄 Luồng đã quay lại @developer — " +
             String(m.feedback || "Yêu cầu sửa lại"),
           at: e.created_at,
+          historySeq: e.seq,
+          lastSeq: e.seq,
         });
       continue;
     }
@@ -103,11 +123,21 @@ export function groupEvents(events: ChatEvent[]): MessageGroup[] {
           permissions: [],
           plans: [],
           logLines: [],
+          historySeq: e.seq,
+          lastSeq: e.seq,
+          detailsAvailable: true,
         };
         turns.set(e.run_id, turn);
         groups.push(turn);
       }
       latest = turn;
+      turn.lastSeq = e.seq;
+      if (
+        typeof m.full_output_url === "string" &&
+        /^\/api\/tickets\/[\w-]+\/event-blobs\/[\w-]+$/.test(m.full_output_url)
+      ) {
+        turn.fullOutputs = [...(turn.fullOutputs || []), m.full_output_url];
+      }
       if (m.model_effective || m.model)
         turn.model = String(m.model_effective || m.model);
       if (m.runtime) turn.runtime = String(m.runtime);
@@ -146,13 +176,28 @@ export function groupEvents(events: ChatEvent[]): MessageGroup[] {
             path,
             old,
             next,
-            diff: createPatch(path, old, next),
+            diff: "",
           };
           break;
         }
-        case "terminal_output":
-          turn.terminals.push(e);
+        case "terminal_output": {
+          const terminalId = m.terminal_id || m.terminalId || m.tool_call_id;
+          const previous = terminalId
+            ? turn.terminals.find(
+                (item) =>
+                  (item.metadata.terminal_id ||
+                    item.metadata.terminalId ||
+                    item.metadata.tool_call_id) === terminalId,
+              )
+            : undefined;
+          if (previous) {
+            previous.content += e.content;
+            previous.metadata = { ...previous.metadata, ...m };
+          } else {
+            turn.terminals.push({ ...e, metadata: { ...m } });
+          }
           break;
+        }
         case "permission":
           if (m.allowed === false) turn.permissions.push(e);
           break;
@@ -169,8 +214,14 @@ export function groupEvents(events: ChatEvent[]): MessageGroup[] {
         id: e.id,
         text: e.content,
         at: e.created_at,
+        historySeq: e.seq,
+        lastSeq: e.seq,
       });
     }
   }
-  return groups;
+  for (const turn of turns.values()) {
+    for (const file of Object.values(turn.files))
+      file.diff = createPatch(file.path, file.old, file.next);
+  }
+  return groups.sort((a, b) => (a.historySeq ?? 0) - (b.historySeq ?? 0));
 }

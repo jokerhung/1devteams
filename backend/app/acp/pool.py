@@ -7,11 +7,13 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from dotenv import dotenv_values
+
 from app.acp.api_session import ApiAgentSession
-from app.acp.client import ACPSession, default_resolver
+from app.acp.client import ACPSession, default_resolver, is_provider_variable
 from app.acp.types import AgentRuntimeConfig, AgentSession
 from app.acp.url_policy import URLPolicy
-from app.core.config import Settings, get_settings
+from app.core.config import BACKEND_ROOT, Settings, get_settings
 from app.core.events import EventBus
 
 SessionFactory = Callable[[AgentRuntimeConfig, Path], AgentSession]
@@ -37,6 +39,13 @@ def create_session(
         workspace,
         bin_resolver=lambda runtime: default_resolver(runtime, settings),
         timeout=settings.acp_prompt_timeout_sec,
+        trusted_native=settings.trusted_native_acp,
+        inherit_provider_env=settings.acp_inherit_provider_env,
+        provider_env={
+            key: value
+            for key, value in dotenv_values(BACKEND_ROOT / ".env", interpolate=False).items()
+            if value is not None and is_provider_variable(key)
+        },
     )
 
 
@@ -76,13 +85,21 @@ class ACPProcessPool:
                 if previous:
                     if previous.config_version > cfg.config_version:
                         raise ValueError("Stale agent config version")
-                    if key in self._starting and previous.config_version == cfg.config_version:
+                    if (
+                        key in self._starting
+                        and previous.config_version == cfg.config_version
+                        and previous.cfg == cfg
+                    ):
                         if previous.workspace != workspace:
                             raise ValueError("Ticket session workspace cannot change")
                         startup = self._starting[key]
                         session = previous
                         break
-                    if previous.alive and previous.config_version == cfg.config_version:
+                    if (
+                        previous.alive
+                        and previous.config_version == cfg.config_version
+                        and previous.cfg == cfg
+                    ):
                         if previous.workspace != workspace:
                             raise ValueError("Ticket session workspace cannot change")
                         previous.last_used = time.monotonic()

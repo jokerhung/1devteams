@@ -30,6 +30,8 @@ class RunContext:
     run_id: str | None = None
     node_id: str | None = None
     had_writer: bool = False
+    overload_gate_counts: dict[str, int] | None = None
+    completion_metadata: dict[str, Any] | None = None
 
     async def agent(self, agent_id: str) -> AgentRuntimeConfig:
         async with self.sessions() as db:
@@ -76,7 +78,7 @@ class RunContext:
             },
         )
 
-    async def gate_emitted(self, key: str) -> bool:
+    async def gate_emitted(self, key: str, reason: str | None = None) -> bool:
         async with self.sessions() as db:
             rows = (
                 await db.scalars(
@@ -85,7 +87,11 @@ class RunContext:
                     )
                 )
             ).all()
-            return any(row.event_metadata.get("gate_key") == key for row in rows)
+            return any(
+                row.event_metadata.get("gate_key") == key
+                and (reason is None or row.event_metadata.get("reason") == reason)
+                for row in rows
+            )
 
     async def chat_inputs(self) -> list[dict[str, Any]]:
         async with self.sessions() as db:

@@ -6,6 +6,7 @@ Phase 3 Workflow Engine: [runner, checkpoint, gates, Git release và realtime](d
 Phase 4 Frontend Shell & Management: [giao diện, đăng nhập, quản lý và kiểm thử](docs/specs/PHASE_4_IMPLEMENTATION_NOTES.md).
 Phase 5 Workflow Builder: [wizard, canvas, pipeline và kiểm thử](docs/specs/PHASE_5_IMPLEMENTATION_NOTES.md).
 Phase 6 Ticket Chat Runtime: [chat, log, attachments, gates và kiểm thử](docs/specs/PHASE_6_IMPLEMENTATION_NOTES.md).
+Phase 7 Terminal & Hardening: [PTY, fallback, audit, backup, cài đặt và kiểm thử](docs/specs/PHASE_7_IMPLEMENTATION_NOTES.md).
 
 Monorepo FastAPI + Next.js 15, ACP/API bridge, database/REST API, workflow engine
 và giao diện quản lý, Workflow Builder, Ticket Chat Runtime. Native ACP còn bị khóa bởi policy gate

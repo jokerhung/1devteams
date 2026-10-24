@@ -1,6 +1,7 @@
 import asyncio
 import io
 import re
+import shutil
 import warnings
 from datetime import timedelta
 from pathlib import Path
@@ -16,6 +17,25 @@ from app.db.models import Attachment, Ticket, TicketMessage
 SCRIPT_EXTENSIONS = {".exe", ".bat", ".cmd", ".ps1", ".sh", ".msi", ".com", ".scr", ".dll"}
 IMAGE_MIMES = {"image/png", "image/jpeg", "image/webp"}
 Image.MAX_IMAGE_PIXELS = 20_000_000
+
+
+async def attachment_paths(db, ticket_ids: list[str]) -> list[str]:
+    rows = (await db.scalars(select(Attachment).where(Attachment.ticket_id.in_(ticket_ids)))).all()
+    return [name for row in rows for name in (row.storage_path, row.thumbnail_path) if name]
+
+
+async def remove_ticket_files(settings, ticket_ids: list[str], paths: list[str]) -> None:
+    root = settings.data_dir.resolve()
+    for name in paths:
+        path = await asyncio.to_thread(Path(name).resolve)
+        if path.is_relative_to(root):
+            await asyncio.to_thread(path.unlink, missing_ok=True)
+    for tid in ticket_ids:
+        from uuid import UUID
+
+        folder = root / "blobs/events" / str(UUID(tid))
+        if folder.resolve().is_relative_to(root):
+            await asyncio.to_thread(shutil.rmtree, folder, ignore_errors=True)
 
 
 def thumbnail(data: bytes) -> bytes:
@@ -138,6 +158,11 @@ async def store_attachment(db, ticket: Ticket, upload, user_id: str, settings) -
     )
     if pending >= settings.attach_max_files:
         fail(422, "Quá số tệp chờ gửi; tối đa 5 tệp/tin nhắn", "attachment_limit")
+    used = await db.scalar(
+        select(func.coalesce(func.sum(Attachment.size), 0)).where(Attachment.ticket_id == ticket.id)
+    )
+    if used + len(data) > settings.attach_quota_mb * 1024 * 1024:
+        fail(413, "Ticket vượt quota dung lượng đính kèm", "attachment_quota")
     identifier = new_id()
     folder = settings.data_dir.resolve() / "blobs/attachments" / ticket.id
     await asyncio.to_thread(folder.mkdir, parents=True, exist_ok=True)

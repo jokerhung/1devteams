@@ -32,6 +32,8 @@ settings = Settings(
     data_dir=data / "blobs",
     allowed_workspace_roots=str(data),
     cors_origins="http://127.0.0.1:3062",
+    enable_remote_terminal=True,
+    model_retry_delays="0,0",
 )
 app = create_app(settings)
 if os.environ.get("ACP_FAKE_SCENARIO") == "bugfix_happy_path":

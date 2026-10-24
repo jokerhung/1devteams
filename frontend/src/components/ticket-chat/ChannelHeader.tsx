@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
+import { SquareTerminal } from "lucide-react";
 import type { Project, Workflow, Ticket } from "@/lib/types";
 import { StatusBadge, ConfirmDialog } from "@/components/ui-app/primitives";
 export function ChannelHeader({
@@ -12,6 +13,8 @@ export function ChannelHeader({
   memberCount,
   canReport,
   onDrawer,
+  terminalOpen,
+  onTerminal,
   onAction,
 }: {
   ticket: Ticket;
@@ -21,6 +24,8 @@ export function ChannelHeader({
   memberCount: number;
   canReport: boolean;
   onDrawer: () => void;
+  terminalOpen: boolean;
+  onTerminal: () => void;
   onAction: (action: "cancel" | "retry") => Promise<void>;
 }) {
   const [cancel, setCancel] = useState(false);
@@ -57,6 +62,16 @@ export function ChannelHeader({
             onClick={onDrawer}
           >
             ⚙
+          </button>
+          <button
+            className="btn btn-light"
+            aria-label="Bật/tắt terminal"
+            aria-pressed={terminalOpen}
+            aria-controls="ticket-terminal-panel"
+            title="Bật/tắt terminal"
+            onClick={onTerminal}
+          >
+            <SquareTerminal size={16} aria-hidden="true" />
           </button>
           <details className="relative">
             <summary

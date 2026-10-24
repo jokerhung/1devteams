@@ -18,11 +18,13 @@ from sqlalchemy.exc import IntegrityError  # noqa: E402
 from starlette.exceptions import HTTPException  # noqa: E402
 
 from app.acp.pool import ACPProcessPool, create_session  # noqa: E402
+from app.acp.pty_manager import PTYManager  # noqa: E402
 from app.api import (  # noqa: E402
     agents,
     assets,
     auth,
     notifications,
+    operations,
     preferences,
     projects,
     realtime,
@@ -33,6 +35,7 @@ from app.api import (  # noqa: E402
 )
 from app.core.config import Settings, get_settings, resolve_binary  # noqa: E402
 from app.core.events import EventBus  # noqa: E402
+from app.core.logging import configure_logging  # noqa: E402
 from app.db.session import database, migrate  # noqa: E402
 from app.engine.runner import TicketRunner  # noqa: E402
 from app.schemas.common import ErrorResponse  # noqa: E402
@@ -40,6 +43,7 @@ from app.services.assets import cleanup_pending  # noqa: E402
 from app.services.connections import ConnectionLimiter  # noqa: E402
 from app.services.models_catalog import ModelsCatalog  # noqa: E402
 from app.services.seed import seed  # noqa: E402
+from app.ws.terminal_ws import router as terminal_router  # noqa: E402
 from app.ws.ticket_ws import router as workflow_socket_router  # noqa: E402
 
 
@@ -53,7 +57,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        configure_logging()
         bus = EventBus()
+        bus.settings = config
         pool = ACPProcessPool(
             event_bus=bus,
             max_acp=config.max_acp_processes,
@@ -63,6 +69,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.event_bus, app.state.acp_pool = bus, pool
         engine, sessions = database(config.database_url)
         app.state.db_session = sessions
+        terminal_manager = PTYManager(config, sessions)
+        app.state.pty_manager = terminal_manager
         bus.sessions = sessions
         app.state.models_catalog = ModelsCatalog()
         app.state.connection_limiter = ConnectionLimiter()
@@ -78,6 +86,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         try:
             await asyncio.to_thread(migrate, config.database_url)
+            from app.services.chat_history import backfill_chat_history
+
+            async with sessions() as db:
+                await backfill_chat_history(db)
             async with sessions() as db:
                 await seed(db, config)
                 await cleanup_pending(db, config)
@@ -117,6 +129,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 cleanup_task.cancel()
                 await asyncio.gather(cleanup_task, return_exceptions=True)
             await pool.close_all()
+            await terminal_manager.close()
             await stack.aclose()
             await engine.dispose()
 
@@ -140,10 +153,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         notifications.router,
         preferences.router,
         assets.router,
+        operations.router,
     ]:
         app.include_router(router, prefix="/api")
     app.include_router(realtime.router)
     app.include_router(workflow_socket_router)
+    app.include_router(terminal_router)
 
     @app.exception_handler(HTTPException)
     async def http_error(request, error):

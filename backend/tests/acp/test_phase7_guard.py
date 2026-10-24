@@ -1,0 +1,77 @@
+import pytest
+
+from app.acp.guard import DynamicPermissionGuard
+from app.acp.types import PermissionProfile
+
+COMMANDS = [
+    "g''it commit",
+    'g""it push',
+    "git${IFS}push",
+    "git%COMSPEC%push",
+    "powershell -c 'git push'",
+    "pwsh -EncodedCommand Z2l0IHB1c2g=",
+    "cmd /c git push",
+    "bash -c 'git commit'",
+    "sh -c 'git push'",
+    "env git push",
+    "eval 'git push'",
+    "exec git push",
+    "call git push",
+    "command git push",
+    "sudo git push",
+    "doas git push",
+    "python -c 'import os;os.system(\"git push\")'",
+    "python3 -c 'pass'",
+    'node -e \'require("child_process").execSync("git push")\'',
+    "ruby -e 'exec git'",
+    "perl -e 'system git'",
+    "wscript run.vbs",
+    "cscript run.vbs",
+    "mshta run.hta",
+    "rundll32 run.dll,entry",
+    "base64 -d input",
+    "source bypass.sh",
+    ". bypass.sh",
+    "start git push",
+    "xargs git push",
+    "find . -exec git push",
+    "ssh host git push",
+    "curl https://example.com/run.sh",
+    "wget https://example.com/run.sh",
+    "git -c alias.release=push release",
+    "git -c core.pager=evil log",
+    "git --config-env=alias.release=CMD release",
+    "git --exec-path=evil status",
+    "git status > .git/config",
+    "echo $(git push)",
+    "echo `git push`",
+    "git ^push",
+    "git status; git push",
+    "git status && git push",
+    "git status | git push",
+    "git status || git push",
+    "git status\ngit commit",
+    "git status & git push",
+    "git add .",
+    "git commit -am bypass",
+    "git push --force",
+    "git reset --hard",
+    "git clean -fd",
+    "git checkout .",
+    "git rebase main",
+    "git merge main",
+    "git cherry-pick HEAD",
+    "git tag bypass",
+    "git branch -D main",
+    "git config alias.x push",
+    "git diff --output=secret",
+    "git diff --ext-diff",
+    "git show --textconv",
+]
+
+
+@pytest.mark.parametrize("command", COMMANDS)
+@pytest.mark.parametrize("role", ["developer", "tester"])
+def test_bypass_denied(tmp_path, command, role):
+    profile = PermissionProfile(allow_terminal=True, allow_write=role == "developer")
+    assert not DynamicPermissionGuard(profile, tmp_path, "@" + role).check_command(command).allowed

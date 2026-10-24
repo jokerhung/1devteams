@@ -13,6 +13,7 @@ from langgraph.types import interrupt
 
 from app.acp.client import ACPSession
 from app.acp.guard import DynamicPermissionGuard
+from app.acp.security import scrub, scrub_data
 from app.acp.types import AgentRuntimeConfig, AgentSession
 from app.db.base import now
 from app.db.models import Ticket
@@ -20,6 +21,7 @@ from app.engine.conditions import evaluate
 from app.engine.context import RunContext
 from app.engine.markers import ROUTES, parse_release, parse_route, routing_instruction
 from app.engine.prompts import build_node_prompt
+from app.engine.retry import RuntimeFailure, overloaded, retry_after, wait_for_retry
 from app.engine.state import WorkflowState
 from app.schemas.workflow import Node
 from app.services.git_service import safe_release_path
@@ -66,6 +68,21 @@ async def gate(
             events=ctx.events,
         )
     counts[nid] = seq
+    async with ctx.sessions() as db:
+        from app.services.audit import audit
+
+        await audit(
+            db,
+            "ticket.confirm"
+            if answer.get("approved")
+            else "ticket.reject"
+            if kind == "human_confirm"
+            else "ticket.reply",
+            state["ticket_id"],
+            user_id=answer.get("user", {}).get("id"),
+            payload={"node": nid, "approved": answer.get("approved")},
+        )
+        await db.commit()
     await ctx.emit(
         "gate_resolved",
         node_id=nid,
@@ -89,6 +106,18 @@ async def stream_turn(
     run_id: str,
     images: list[dict[str, Any]] | None = None,
 ) -> tuple[str, list[str]]:
+    async with asyncio.timeout(ctx.settings.acp_prompt_timeout_sec):
+        return await _stream_turn(ctx, session, prompt, nid, run_id, images)
+
+
+async def _stream_turn(
+    ctx: RunContext,
+    session: AgentSession,
+    prompt: str,
+    nid: str,
+    run_id: str,
+    images: list[dict[str, Any]] | None = None,
+) -> tuple[str, list[str]]:
     buffers: dict[str, str] = {}
     full = ""
     files: set[str] = set()
@@ -104,12 +133,12 @@ async def stream_turn(
     async def emit(kind: str, content: str = "", metadata: dict[str, Any] | None = None) -> None:
         await ctx.emit(
             kind,
-            content,
+            scrub_data(content, session.cfg),
             sender_type="AGENT",
             sender_name=session.cfg.handle,
             node_id=nid,
             run_id=run_id,
-            metadata=metadata or {},
+            metadata=scrub_data(metadata or {}, session.cfg),
         )
 
     async def flush() -> None:
@@ -139,8 +168,17 @@ async def stream_turn(
                 await flush()
                 if event.event_type == "error":
                     await emit("error", event.content, event.metadata)
-                    raise RuntimeError("Agent runtime failed")
+                    raise RuntimeFailure(event.content, event.metadata)
                 if event.event_type == "completed":
+                    ctx.completion_metadata = scrub_data(
+                        {k: v for k, v in event.metadata.items() if k in {"usage", "stop_reason", "model"}},
+                        session.cfg,
+                    )
+                    if any(
+                        p in str(event.metadata.get("stop_reason", "")).lower()
+                        for p in ctx.settings.overload_patterns.split(",")
+                    ):
+                        raise RuntimeFailure(str(event.metadata.get("stop_reason")), event.metadata)
                     if event.metadata.get("turn_interrupted") or session.turn_interrupted:
                         raise RuntimeError("Agent restarted during turn")
                     files.update(event.metadata.get("modified_files", []))
@@ -165,12 +203,16 @@ async def stream_turn(
             await close()
 
 
-async def agent_turn(
-    node: Node, state: WorkflowState, ctx: RunContext, extra: str = ""
+async def _agent_turn_once(
+    node: Node,
+    state: WorkflowState,
+    ctx: RunContext,
+    extra: str = "",
+    override: AgentRuntimeConfig | None = None,
 ) -> tuple[str, list[str], AgentRuntimeConfig, str, dict[str, Any]]:
     agent_id = str(node.data["agent_id"])
     for attempt in range(2):
-        cfg = await ctx.agent(agent_id)
+        cfg = override or await ctx.agent(agent_id)
         ctx.had_writer = ctx.had_writer or cfg.permission_profile.allow_write
         if node.type == "git_release" and (
             cfg.runtime == "openai-api" or not cfg.permission_profile.can_git_release
@@ -282,6 +324,7 @@ async def agent_turn(
             files = sorted(set(relative_files))
             routing = str(node.data.get("routing", "none"))
             clean, route = parse_route(text, routing)
+            clean = scrub(clean, cfg)
             if routing in ROUTES and route is None:
                 correction, _ = await stream_turn(
                     ctx, session, "Chỉ trả lời đúng 1 dòng:" + routing_instruction(routing), node.id, run_id
@@ -308,13 +351,20 @@ async def agent_turn(
                 sender_name=cfg.handle,
                 node_id=node.id,
                 run_id=run_id,
-                metadata={"route": route, "modified_files": files},
+                metadata={
+                    **(ctx.completion_metadata or {}),
+                    "route": route,
+                    "modified_files": files,
+                    "model_effective": cfg.model,
+                    "runtime": cfg.runtime,
+                },
             )
             return clean, files if cfg.runtime != "openai-api" else [], cfg, route or "default", cursors
         except asyncio.CancelledError:
             current = asyncio.current_task()
             if current is not None and current.cancelling():
                 raise
+            override = None
             # Pool restart can cancel the shared startup task without cancelling this node.
             if attempt:
                 raise RuntimeError("Agent startup interrupted twice") from None
@@ -322,10 +372,14 @@ async def agent_turn(
                 "log", "↻ cấu hình thay đổi trong lúc tạo session, chạy lại", node_id=node.id, run_id=run_id
             )
             await ctx.pool.discard_session(ctx.ticket_id, agent_id)
+        except RuntimeFailure:
+            raise
         except (RuntimeError, TimeoutError, OSError, ValueError):
             if attempt:
                 raise
             restarted = session is not None and session.turn_interrupted
+            if restarted:
+                override = None
             await ctx.emit(
                 "log",
                 "↻ lượt bị dừng do sửa cấu hình agent, chạy lại"
@@ -336,6 +390,113 @@ async def agent_turn(
             )
             await ctx.pool.discard_session(ctx.ticket_id, agent_id)
     raise RuntimeError("Unreachable")
+
+
+async def agent_turn(
+    node: Node, state: WorkflowState, ctx: RunContext, extra: str = ""
+) -> tuple[str, list[str], AgentRuntimeConfig, str, dict[str, Any]]:
+    primary = await ctx.agent(str(node.data["agent_id"]))
+    cfg = primary
+    delays = [float(v) for v in ctx.settings.model_retry_delays.split(",")][:2]
+    retries = 0
+    fallback = False
+    working: WorkflowState = {**state}
+    while True:
+        gate_count = working.get("gate_counts", {}).get(node.id, 0) + 1
+        gate_key = f"{state['ticket_id']}:{node.id}:{gate_count}"
+        if await ctx.gate_emitted(gate_key, "model_overload"):
+            answer, counts = await gate(
+                working,
+                ctx,
+                node.id,
+                "human_input",
+                {
+                    "question": (
+                        f"{primary.handle} không chạy được do model quá tải. "
+                        "Đổi model trong Agents rồi trả lời để thử lại, hoặc huỷ ticket."
+                    ),
+                    "reason": "model_overload",
+                },
+            )
+            working["gate_counts"] = counts
+            ctx.overload_gate_counts = counts
+            cfg = await ctx.agent(primary.agent_id)
+            retries, fallback = 0, False
+            await ctx.pool.discard_session(ctx.ticket_id, primary.agent_id)
+        try:
+            return await _agent_turn_once(node, working, ctx, extra, cfg)
+        except RuntimeFailure as error:
+            if not overloaded(error, ctx.settings.overload_patterns):
+                raise
+            await ctx.pool.discard_session(ctx.ticket_id, primary.agent_id)
+            if not fallback and retries < len(delays):
+                delay = max(delays[retries], retry_after(error.metadata.get("retry_after")))
+                retries += 1
+                await ctx.emit(
+                    "log",
+                    f"⚠ {primary.handle} model quá tải; thử lại {retries}/2 sau {delay:g}s",
+                    node_id=node.id,
+                )
+                await wait_for_retry(delay)
+                continue
+            if not fallback and (
+                primary.fallback_model or primary.fallback_runtime or primary.fallback_agent_id
+            ):
+                if primary.fallback_agent_id:
+                    async with ctx.sessions() as db:
+                        from app.services.project_service import effective_agents
+
+                        allowed = {a.id for a in await effective_agents(db, ctx.project_id)}
+                    if primary.fallback_agent_id not in allowed:
+                        raise ValueError("Fallback agent không thuộc project") from error
+                    target = await ctx.agent(primary.fallback_agent_id)
+                    p = primary.permission_profile
+                    if (
+                        p.allow_write
+                        or p.allow_terminal
+                        or p.can_git_release
+                        or target.runtime != "openai-api"
+                    ):
+                        raise ValueError("Fallback API chỉ dành cho text-only") from error
+                    cfg = target.model_copy(
+                        update={
+                            "agent_id": primary.agent_id,
+                            "handle": primary.handle,
+                            "system_prompt": primary.system_prompt,
+                            "permission_profile": p,
+                            "config_version": primary.config_version,
+                        }
+                    )
+                else:
+                    runtime = primary.fallback_runtime or primary.runtime
+                    if runtime == "openai-api" and primary.runtime != "openai-api":
+                        raise ValueError("API fallback cần agent credential riêng") from error
+                    cfg = primary.model_copy(update={"model": primary.fallback_model, "runtime": runtime})
+                fallback = True
+                await ctx.emit(
+                    "log",
+                    f"⚠ {primary.handle} chuyển sang model {cfg.model} ({cfg.runtime}) "
+                    "do model chính quá tải",
+                    node_id=node.id,
+                )
+                continue
+            answer, counts = await gate(
+                working,
+                ctx,
+                node.id,
+                "human_input",
+                {
+                    "question": (
+                        f"{primary.handle} không chạy được do model quá tải. "
+                        "Thử lại / đổi model trong Agents / huỷ ticket."
+                    ),
+                    "reason": "model_overload",
+                },
+            )
+            working["gate_counts"] = counts
+            ctx.overload_gate_counts = counts
+            cfg = await ctx.agent(primary.agent_id)
+            retries, fallback = 0, False
 
 
 def make_node(node: Node, agents: dict[str, AgentRuntimeConfig]) -> Callable[..., Awaitable[dict[str, Any]]]:
@@ -444,6 +605,24 @@ def make_node(node: Node, agents: dict[str, AgentRuntimeConfig]) -> Callable[...
                 branch=snapshot["branch"],
                 default_branch=ctx.default_branch,
             )
+            async with ctx.sessions() as db:
+                from app.services.audit import audit
+
+                await audit(
+                    db,
+                    "git.release",
+                    ctx.ticket_id,
+                    user_id=next(
+                        (
+                            item.get("user", {}).get("id")
+                            for item in reversed(state.get("user_inputs", []))
+                            if item.get("kind") == "approve"
+                        ),
+                        None,
+                    ),
+                    payload={"commit_hash": result["commit_hash"], "files": files},
+                )
+                await db.commit()
             await ctx.emit(
                 "message_chunk",
                 f"Đã push commit `{result['commit_hash']}` lên `{result['branch']}`",
@@ -476,7 +655,7 @@ def make_node(node: Node, agents: dict[str, AgentRuntimeConfig]) -> Callable[...
                 },
             )
             inputs = [{"node_id": nid, "kind": "answer", "text": answer["text"], "user": answer["user"]}]
-            state = {**state, "user_inputs": state.get("user_inputs", []) + inputs}
+            state = {**state, "user_inputs": state.get("user_inputs", []) + inputs, "gate_counts": counts}
             count = 1
         iterations[nid] = count
         clean, files, cfg, route, cursors = await agent_turn(node, state, ctx)
@@ -505,7 +684,10 @@ def make_node(node: Node, agents: dict[str, AgentRuntimeConfig]) -> Callable[...
     async def tracked(state: WorkflowState, config: RunnableConfig) -> dict[str, Any]:
         ctx = cast(RunContext, config["configurable"]["ctx"])
         ctx.node_id, ctx.run_id = node.id, None
+        ctx.overload_gate_counts = None
         result = await execute(state, config)
+        if ctx.overload_gate_counts:
+            result["gate_counts"] = {**result.get("gate_counts", {}), **ctx.overload_gate_counts}
         result["node_statuses"] = state.get("node_statuses", {}) | {node.id: "done"}
         return result
 

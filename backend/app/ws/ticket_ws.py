@@ -15,6 +15,27 @@ from app.schemas.ticket import Confirm, Reply
 router = APIRouter()
 
 
+def chat_event(row: TicketMessage, compact: bool):
+    event = message_event(row)
+    if (
+        compact
+        and row.sender_type != "USER"
+        and row.event_type
+        not in {
+            "agent_turn_start",
+            "agent_turn_end",
+            "message_chunk",
+            "error",
+            "ticket_status",
+            "gate_waiting",
+            "gate_resolved",
+        }
+    ):
+        # Keep every sequence for gap-free reconnect, without sending detail payloads.
+        event.update(event_type="detail_available", content="", metadata={"kind": row.event_type})
+    return event
+
+
 async def authenticate(socket: WebSocket):
     authorization = socket.headers.get("authorization", "")
     token = (
@@ -62,6 +83,7 @@ async def channel_socket(socket: WebSocket, identifier: str, ticket_channel: boo
             await require_project(db, pid, user)
         channel = f"tickets/{identifier}" if ticket_channel else f"projects/{identifier}"
         after = max(0, int(socket.query_params.get("after_seq", "0")))
+        compact = socket.query_params.get("view") == "chat"
         bus = socket.app.state.event_bus
         async with bus.subscribe(channel) as queue:
             if ticket_channel:
@@ -79,7 +101,7 @@ async def channel_socket(socket: WebSocket, identifier: str, ticket_channel: boo
                             )
                         ).all()
                     for row in rows:
-                        await socket.send_json({"type": "event", "data": message_event(row)})
+                        await socket.send_json({"type": "event", "data": chat_event(row, compact)})
                         after = row.seq
                     if len(rows) < 500:
                         break
@@ -124,7 +146,9 @@ async def channel_socket(socket: WebSocket, identifier: str, ticket_channel: boo
                                         )
                                     ).all()
                                 for row in rows:
-                                    await socket.send_json({"type": "event", "data": message_event(row)})
+                                    await socket.send_json(
+                                        {"type": "event", "data": chat_event(row, compact)}
+                                    )
                                     after = row.seq
                                 if len(rows) < 500:
                                     break

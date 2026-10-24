@@ -9,6 +9,8 @@ import type {
 type Store = RuntimeState & {
   events: ChatEvent[];
   groups: MessageGroup[];
+  summaries: MessageGroup[];
+  history: (groups: MessageGroup[]) => void;
   pending: PendingMessage[];
   afterSeq: number;
   stateSeq: number;
@@ -22,6 +24,16 @@ export function createTicketStore(status = "OPEN") {
   return createStore<Store>()((set) => ({
     events: [],
     groups: [],
+    summaries: [],
+    history: (incoming) =>
+      set((s) => {
+        const byId = new Map(s.summaries.map((group) => [group.id, group]));
+        incoming.forEach((group) => byId.set(group.id, group));
+        const summaries = [...byId.values()].sort(
+          (a, b) => (a.historySeq ?? 0) - (b.historySeq ?? 0),
+        );
+        return { summaries, groups: groupEvents(s.events, summaries) };
+      }),
     pending: [],
     afterSeq: 0,
     stateSeq: 0,
@@ -98,15 +110,16 @@ export function createTicketStore(status = "OPEN") {
             String(e.metadata?.client_msg_id || ""),
           ]),
         );
-        let afterSeq = 0;
+        let afterSeq = s.afterSeq;
         for (const event of events) {
+          if (event.seq <= afterSeq) continue;
           if (event.seq !== afterSeq + 1) break;
           afterSeq = event.seq;
         }
         return {
           ...next,
           events,
-          groups: groupEvents(events),
+          groups: groupEvents(events, s.summaries),
           afterSeq,
           pending: s.pending.filter((m) => !ids.has(m.id)),
         };

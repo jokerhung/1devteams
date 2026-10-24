@@ -132,6 +132,13 @@ async def prepare_agent(body, settings, previous: Agent | None = None) -> dict:
             await policy(settings).validate(url)
         except URLPolicyError:
             fail(422, "base_url không được phép hoặc không phân giải được", "unsafe_url")
+    fallback_runtime = values.get("fallback_runtime", previous.fallback_runtime if previous else None)
+    fallback_agent = values.get("fallback_agent_id", previous.fallback_agent_id if previous else None)
+    if fallback_runtime == "openai-api" or fallback_agent:
+        if any(profile.get(name) for name in ("allow_write", "allow_terminal", "can_git_release")):
+            fail(422, "Fallback agent chỉ dành cho vai trò text-only", "unsafe_fallback")
+        if not fallback_agent:
+            fail(422, "Chọn fallback_agent_id cho API credential riêng", "invalid_fallback")
     return values
 
 
@@ -210,6 +217,9 @@ def runtime_config(agent: Agent, settings) -> AgentRuntimeConfig:
         handle=agent.handle,
         runtime=agent.runtime,
         model=agent.model,
+        fallback_model=agent.fallback_model,
+        fallback_runtime=agent.fallback_runtime,
+        fallback_agent_id=agent.fallback_agent_id,
         system_prompt=agent.system_prompt,
         permission_profile=PermissionProfile(**agent.permission_profile),
         config_version=agent.config_version,

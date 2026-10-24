@@ -177,6 +177,63 @@ async def test_native_adapter_fails_closed(cfg, tmp_path):
     assert session.process is None
 
 
+@pytest.mark.parametrize("inherit", [True, False])
+async def test_provider_environment_isolation(make_session, handshake, monkeypatch, inherit):
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:20128")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "temporary-gateway-token")
+    monkeypatch.setenv("AITEAMS_NON_PROVIDER", "retained")
+    handshake[0]["assert_env"] = {
+        "ANTHROPIC_BASE_URL": "http://127.0.0.1:20128" if inherit else None,
+        "ANTHROPIC_AUTH_TOKEN": "temporary-gateway-token" if inherit else None,
+        "AITEAMS_NON_PROVIDER": "retained",
+    }
+    session = make_session(handshake, inherit_provider_env=inherit)
+    try:
+        await session.start()
+        assert session.alive
+    finally:
+        await session.close()
+
+
+async def test_explicit_provider_environment_and_redaction(make_session, handshake, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:20128")
+    handshake[0]["assert_env"] = {"ANTHROPIC_BASE_URL": "https://provider.example"}
+    session = make_session(
+        handshake,
+        inherit_provider_env=False,
+        provider_env={
+            "ANTHROPIC_BASE_URL": "https://provider.example",
+            "ANTHROPIC_AUTH_TOKEN": "local-secret",
+        },
+    )
+    try:
+        await session.start()
+        await session._emit(ACPStreamEvent(agent_handle="@custom", event_type="log", content="local-secret"))
+        assert (await session._queue.get()).content == "<redacted>"
+    finally:
+        await session.close()
+
+
+async def test_trusted_native_requires_host_opt_in_and_reports_unverified_guard(make_session, handshake):
+    session = make_session(
+        [*handshake, {"expect": "session/prompt", "reply": {"stopReason": "end_turn"}}],
+        trusted_native=True,
+    )
+    session.client_tools_only = False
+    try:
+        await session.start()
+        events = [event async for event in session.prompt("Go")]
+        assert events[0].event_type == "log"
+        assert events[0].metadata == {
+            "runtime_policy": "trusted_native",
+            "guard_coverage_verified": False,
+        }
+        assert events[-1].event_type == "completed"
+        assert session.handlers.guard.profile == session.cfg.permission_profile
+    finally:
+        await session.close()
+
+
 async def test_nested_redaction_before_json_encoding(cfg, tmp_path):
     secret = 'private-"quoted"-\\value'
     cfg.env = {"TOKEN": secret}

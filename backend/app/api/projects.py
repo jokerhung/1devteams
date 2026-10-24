@@ -158,7 +158,14 @@ async def patch_project(pid: UUID, body: ProjectPatch, request: Request, db: DB,
 
 @router.delete("/{pid}", response_model=Success)
 async def delete_project(pid: UUID, request: Request, db: DB, user: CurrentUser):
+    from app.services.assets import attachment_paths, remove_ticket_files
+
     project = await require_project(db, str(pid), user, write=True)
+    ticket_ids = list((await db.scalars(select(Ticket.id).where(Ticket.project_id == project.id))).all())
+    runner = request.app.state.ticket_runner
+    if any(tid in runner.tasks or tid in runner.adhoc_tasks for tid in ticket_ids):
+        fail(409, "Project đang có agent hoạt động")
+    paths = await attachment_paths(db, ticket_ids)
     running = await db.scalar(
         select(Ticket.id)
         .where(
@@ -173,6 +180,9 @@ async def delete_project(pid: UUID, request: Request, db: DB, user: CurrentUser)
     await db.execute(delete(Workflow).where(Workflow.project_id == project.id))
     await db.delete(project)
     await commit(db)
+    await remove_ticket_files(request.app.state.settings, ticket_ids, paths)
+    for tid in ticket_ids:
+        await runner.checkpointer.adelete_thread(tid)
     return {"ok": True}
 
 

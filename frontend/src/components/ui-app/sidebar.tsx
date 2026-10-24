@@ -356,6 +356,11 @@ export function Sidebar() {
             </button>
           )}
         </div>
+        {me.data && ["OWNER", "ADMIN"].includes(me.data.system_role) && (
+          <Link className="side-item mt-3" href="/settings/adapters">
+            Settings
+          </Link>
+        )}
         <div className="mt-4 flex items-center gap-2 rounded-xl p-2 hover:bg-[#DFDDD0]/60">
           <UserAvatar name={me.data?.display_name || "?"} />
           <div className="min-w-0 flex-1">

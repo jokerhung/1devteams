@@ -6,8 +6,16 @@ from sqlalchemy import or_, select
 
 from app.api.workflows import authorized_workflow
 from app.core.deps import DB, CurrentUser, fail, record, require_project
-from app.db.models import Ticket, TicketMessage
-from app.schemas.ticket import LogOut, MessageOut, TicketCreate, TicketCreated, TicketOut, TicketPatch
+from app.db.models import ChatHistoryEntry, Ticket, TicketMessage
+from app.schemas.ticket import (
+    HistoryOut,
+    LogOut,
+    MessageOut,
+    TicketCreate,
+    TicketCreated,
+    TicketOut,
+    TicketPatch,
+)
 from app.services.common import commit, fields, patch_values
 from app.services.ticket_service import create_ticket, public_ticket
 
@@ -131,6 +139,107 @@ async def messages(
             .where(TicketMessage.ticket_id == str(tid), TicketMessage.seq > after_seq)
             .order_by(TicketMessage.seq)
             .limit(limit)
+        )
+    ).all()
+    result = []
+    for row in rows:
+        value = fields(row)
+        value["metadata"] = value.pop("event_metadata")
+        result.append(value)
+    return result
+
+
+@router.get("/tickets/{tid}/history", response_model=HistoryOut)
+async def history(
+    tid: UUID,
+    db: DB,
+    user: CurrentUser,
+    before_seq: int | None = Query(default=None, ge=1),
+    through_seq: int | None = Query(default=None, ge=0),
+    limit: int = Query(default=10, ge=1, le=10),
+) -> dict:
+    ticket = await authorized_ticket(db, tid, user)
+    watermark = (
+        min(through_seq, ticket.next_message_seq - 1)
+        if through_seq is not None
+        else ticket.next_message_seq - 1
+    )
+    query = select(ChatHistoryEntry).where(
+        ChatHistoryEntry.ticket_id == str(tid),
+        ChatHistoryEntry.first_seq <= watermark,
+    )
+    if before_seq is not None:
+        query = query.where(ChatHistoryEntry.first_seq < before_seq)
+    entries = list(
+        (await db.scalars(query.order_by(ChatHistoryEntry.first_seq.desc()).limit(limit + 1))).all()
+    )
+    groups = []
+    from app.services.chat_history import project_events
+
+    historical = None
+    for entry in reversed(entries[:limit]):
+        payload = entry.payload
+        last_seq = entry.last_seq
+        if entry.last_seq > watermark:
+            if historical is None:
+                rows = (
+                    await db.scalars(
+                        select(TicketMessage)
+                        .where(
+                            TicketMessage.ticket_id == str(tid),
+                            TicketMessage.seq <= watermark,
+                        )
+                        .order_by(TicketMessage.seq)
+                    )
+                ).all()
+                historical = project_events(rows)
+            projected = historical.get(entry.entry_key)
+            if projected is None:
+                continue
+            payload = projected["payload"]
+            last_seq = projected["last"]
+        elif payload["type"] == "turn" and not payload.get("endedAt"):
+            # Reconstruct only visible text for active/historical-in-progress turns.
+            rows = (
+                await db.scalars(
+                    select(TicketMessage)
+                    .where(
+                        TicketMessage.ticket_id == str(tid),
+                        TicketMessage.run_id == payload["id"],
+                        TicketMessage.seq <= watermark,
+                        TicketMessage.event_type.in_(
+                            ["agent_turn_start", "message_chunk", "agent_turn_end", "error"]
+                        ),
+                    )
+                    .order_by(TicketMessage.seq)
+                )
+            ).all()
+            projected = project_events(rows).get(entry.entry_key)
+            if projected:
+                payload = projected["payload"]
+                if "gate" in entry.payload and entry.last_seq <= watermark:
+                    payload["gate"] = entry.payload["gate"]
+            last_seq = watermark
+        groups.append({**payload, "historySeq": entry.first_seq, "lastSeq": min(last_seq, watermark)})
+    return {
+        "groups": groups,
+        "before_seq": entries[min(limit, len(entries)) - 1].first_seq if entries else None,
+        "has_more": len(entries) > limit,
+        "last_seq": watermark,
+    }
+
+
+@router.get("/tickets/{tid}/turns/{run_id}/details", response_model=list[MessageOut])
+async def turn_details(tid: UUID, run_id: UUID, db: DB, user: CurrentUser) -> list[dict]:
+    await authorized_ticket(db, tid, user)
+    rows = (
+        await db.scalars(
+            select(TicketMessage)
+            .where(
+                TicketMessage.ticket_id == str(tid),
+                TicketMessage.run_id == str(run_id),
+            )
+            .order_by(TicketMessage.seq)
         )
     ).all()
     result = []
@@ -271,6 +380,18 @@ async def send_message(tid: UUID, body: ChatMessage, request: Request, db: DB, u
             return message_event(previous)
     if status in {"COMPLETED", "CANCELLED"}:
         fail(409, "Ticket đã kết thúc", "invalid_ticket_status")
+    mentioned = None
+    if status not in {"WAITING_USER_INPUT", "WAITING_USER_CONFIRM"}:
+        from app.services.project_service import effective_agents
+
+        handles = set(re.findall(r"@[\w-]+", body.text.lower()))
+        mentioned = next(
+            (a for a in await effective_agents(db, ticket.project_id) if a.handle in handles and a.is_active),
+            None,
+        )
+        runner = request.app.state.ticket_runner
+        if mentioned and (str(tid) in runner.tasks or str(tid) in runner.adhoc_tasks):
+            fail(409, "Agent đang bận; gửi lại sau lượt hiện tại", "agent_busy")
     message = await add_message(
         db,
         str(tid),
@@ -329,6 +450,77 @@ async def send_message(tid: UUID, body: ChatMessage, request: Request, db: DB, u
             await runner.confirm(str(tid), True, None, user)
         elif re.search(r"@developer\b", body.text, re.I):
             await runner.confirm(str(tid), False, body.text, user)
-    elif status == "OPEN" and re.search(r"@ba\b", body.text, re.I):
-        await runner.start(str(tid), user)
+    elif mentioned:
+        await runner.adhoc(str(tid), mentioned.id, body.text, user)
     return value
+
+
+@router.post("/tickets/{tid}/stop-agent")
+async def stop_agent(tid: UUID, request: Request, user: CurrentUser):
+    await request.app.state.ticket_runner.stop_agent(str(tid), user)
+    return {"accepted": True}
+
+
+@router.post("/tickets/{tid}/stash")
+async def stash_ticket(tid: UUID, request: Request, db: DB, user: CurrentUser):
+    import asyncio
+    import os
+    from pathlib import Path
+
+    from app.services.audit import audit
+    from app.services.git_service import GitService
+
+    ticket = await authorized_ticket(db, tid, user)
+    project = await require_project(db, ticket.project_id, user, write=True)
+    if ticket.status != "CANCELLED":
+        fail(409, "Huỷ ticket trước khi cất thay đổi vào stash")
+    runner = request.app.state.ticket_runner
+    git = GitService(Path(project.workspace_path))
+    key = os.path.normcase(str(git.workspace))
+    lock = runner.workspace_locks.setdefault(key, asyncio.Lock())
+    if lock.locked():
+        fail(409, "Workspace đang được ticket khác sử dụng")
+    async with lock:
+        result = await git.run("stash", "push", "-u", "-m", f"aiteams-ticket-{ticket.number}")
+    await audit(db, "ticket.stash", str(tid), user_id=user.id)
+    await commit(db)
+    return {"ok": True, "message": result}
+
+
+@router.delete("/tickets/{tid}")
+async def delete_ticket(tid: UUID, request: Request, db: DB, user: CurrentUser):
+    from app.services.assets import attachment_paths, remove_ticket_files
+
+    ticket = await authorized_ticket(db, tid, user)
+    await require_project(db, ticket.project_id, user, write=True)
+    runner = request.app.state.ticket_runner
+    if (
+        ticket.status not in {"CANCELLED", "COMPLETED"}
+        or str(tid) in runner.tasks
+        or str(tid) in runner.adhoc_tasks
+    ):
+        fail(409, "Chỉ xoá ticket đã kết thúc")
+    paths = await attachment_paths(db, [str(tid)])
+    await db.delete(ticket)
+    await commit(db)
+    await remove_ticket_files(request.app.state.settings, [str(tid)], paths)
+    await runner.checkpointer.adelete_thread(str(tid))
+    return {"ok": True}
+
+
+@router.get("/tickets/{tid}/event-blobs/{blob_id}")
+async def event_blob(tid: UUID, blob_id: UUID, request: Request, db: DB, user: CurrentUser):
+    from pathlib import Path
+
+    from fastapi.responses import FileResponse
+
+    await authorized_ticket(db, tid, user)
+    path = request.app.state.settings.data_dir.resolve() / "blobs/events" / str(tid) / f"{blob_id}.json"
+    if not path.is_file():
+        fail(404, "Không tìm thấy output")
+    return FileResponse(
+        Path(path),
+        media_type="application/json",
+        filename=f"{blob_id}.json",
+        headers={"Content-Security-Policy": "sandbox", "X-Content-Type-Options": "nosniff"},
+    )

@@ -3,10 +3,23 @@ import sys
 
 import pytest
 
-from app.acp.guard import DynamicPermissionGuard
+from app.acp.guard import Decision, DynamicPermissionGuard
 from app.acp.handlers import ClientRequestHandlers
 from app.acp.jsonrpc import RPCError
 from app.acp.types import PermissionProfile
+
+
+class PythonHarnessGuard(DynamicPermissionGuard):
+    """Permit only these trusted subprocess fixtures to exercise terminal I/O.
+
+    Production profiles now reject interpreter wrappers; their denial is covered
+    by test_phase7_guard.py. These tests verify byte limits and child cleanup.
+    """
+
+    def check_command(self, command, args=None):
+        assert command == sys.executable
+        assert args in (["-c", "print('é' * 20)"], ["-c", "import time; time.sleep(30)"])
+        return Decision(allowed=True, reason="Trusted terminal I/O fixture")
 
 
 async def test_write_diff_and_read_range(tmp_path):
@@ -50,7 +63,7 @@ async def test_terminal_byte_limit_and_release(tmp_path, limit):
         events.append(event)
 
     handlers = ClientRequestHandlers(
-        DynamicPermissionGuard(PermissionProfile(allow_terminal=True), tmp_path), emit
+        PythonHarnessGuard(PermissionProfile(allow_terminal=True), tmp_path), emit
     )
     result = await handlers.handle(
         "terminal/create",
@@ -71,7 +84,7 @@ async def test_terminal_close_kills_child(tmp_path):
         pass
 
     handlers = ClientRequestHandlers(
-        DynamicPermissionGuard(PermissionProfile(allow_terminal=True), tmp_path), emit
+        PythonHarnessGuard(PermissionProfile(allow_terminal=True), tmp_path), emit
     )
     result = await handlers.handle(
         "terminal/create", {"command": sys.executable, "args": ["-c", "import time; time.sleep(30)"]}

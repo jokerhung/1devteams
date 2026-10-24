@@ -49,6 +49,10 @@ export type Gate = {
   };
 };
 export type TurnGroup = {
+  historySeq?: number;
+  lastSeq?: number;
+  detailsAvailable?: boolean;
+  detailCounts?: Record<string, number>;
   type: "turn";
   id: string;
   agent: string;
@@ -67,11 +71,13 @@ export type TurnGroup = {
   logLines: LogLine[];
   gate?: Gate;
   failed?: boolean;
+  fullOutputs?: string[];
 };
-export type MessageGroup =
+export type MessageGroup = (
   | TurnGroup
   | { type: "user"; id: string; event: ChatEvent }
-  | { type: "system"; id: string; text: string; at: string };
+  | { type: "system"; id: string; text: string; at: string }
+) & { historySeq?: number; lastSeq?: number };
 export type PendingMessage = {
   id: string;
   text: string;

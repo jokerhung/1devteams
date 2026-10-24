@@ -2,20 +2,13 @@
 import { eventDate } from "./time";
 import type { Agent } from "@/lib/types";
 import { Logo } from "@/components/ui-app/primitives";
-import { AgentLog } from "./AgentLog";
+import { TurnDetails } from "./TurnDetails";
 import { MarkdownContent } from "./blocks/MarkdownContent";
-import { FileDiffBlock } from "./blocks/FileDiffBlock";
-import {
-  ThinkingBlock,
-  ToolCallChips,
-  TerminalBlock,
-  PermissionLog,
-  PlanBlock,
-} from "./blocks/RuntimeBlocks";
 import { InlineConfirmBox } from "./InlineConfirmBox";
 import { cleanContent } from "./groupEvents";
 import type { TurnGroup } from "./types";
 export function AgentTurn({
+  ticketId,
   turn,
   agents,
   running,
@@ -23,7 +16,9 @@ export function AgentTurn({
   canConfirm,
   onConfirm,
   onLog,
+  onStop,
 }: {
+  ticketId: string;
   turn: TurnGroup;
   agents: Agent[];
   running: boolean;
@@ -31,6 +26,7 @@ export function AgentTurn({
   canConfirm: boolean;
   onConfirm: (approved: boolean, feedback?: string) => Promise<void>;
   onLog: () => void;
+  onStop?: () => void;
 }) {
   const agent = agents.find((a) => a.handle === turn.agent);
   const api = turn.runtime === "openai-api" || agent?.runtime === "openai-api";
@@ -52,6 +48,11 @@ export function AgentTurn({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <b>{turn.agent.replace(/^@/, "")}</b>
+          {running && onStop && (
+            <button className="btn btn-light" onClick={onStop}>
+              Dừng agent
+            </button>
+          )}
           <span className="rounded bg-stone-100 px-1 font-mono text-[10px] text-stone-500">
             {turn.model || agent?.model || "Model mặc định"}
           </span>
@@ -71,30 +72,18 @@ export function AgentTurn({
             </span>
           )}
         </div>
-        <AgentLog lines={turn.logLines} running={running} onFull={onLog} />
-        <ThinkingBlock text={turn.thinking} running={running} />
-        {!api && <ToolCallChips tools={Object.values(turn.tools)} />}
-        {turn.plans.map((e) => (
-          <PlanBlock key={e.id} event={e} />
-        ))}
         <MarkdownContent
           text={cleanContent(turn.content)}
           agents={agents}
           streaming={running}
         />
-        {!api && (
-          <>
-            {Object.values(turn.files).map((f) => (
-              <FileDiffBlock key={f.path} change={f} />
-            ))}
-            {turn.terminals.map((e) => (
-              <TerminalBlock key={e.id} event={e} />
-            ))}
-            {turn.permissions.map((e) => (
-              <PermissionLog key={e.id} event={e} agent={turn.agent} />
-            ))}
-          </>
-        )}
+        <TurnDetails
+          ticketId={ticketId}
+          turn={turn}
+          running={running}
+          api={api}
+          onLog={onLog}
+        />
         {running && (
           <p className="mt-2 animate-pulse text-xs text-stone-400">
             {turn.agent} đang làm việc <span>● ● ●</span>

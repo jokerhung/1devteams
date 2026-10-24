@@ -60,4 +60,45 @@ describe("engine event grouping", () => {
   it("hides engine routing and release markers", () => {
     expect(cleanContent("Done\n@@ROUTE:ready\n@@RELEASE {}@@END")).toBe("Done");
   });
+  it("appends terminal chunks by session without mutating source events or merging separate commands", () => {
+    const base = events.find((e) => e.event_type === "agent_turn_start")!;
+    const chunks: ChatEvent[] = [
+      {
+        ...base,
+        id: "out-1",
+        event_type: "terminal_output",
+        content: "hello",
+        metadata: { terminal_id: "one" },
+      },
+      {
+        ...base,
+        id: "out-2",
+        event_type: "terminal_output",
+        content: " world\n",
+        metadata: { terminal_id: "one" },
+      },
+      {
+        ...base,
+        id: "out-3",
+        event_type: "terminal_output",
+        content: "other",
+        metadata: { terminal_id: "two" },
+      },
+      {
+        ...base,
+        id: "out-4",
+        event_type: "terminal_output",
+        content: "git",
+        metadata: { command: "git status" },
+      },
+    ];
+    const first = groupEvents([base, ...chunks])[0];
+    const second = groupEvents([base, ...chunks])[0];
+    expect(first.type).toBe("turn");
+    if (first.type !== "turn" || second.type !== "turn") return;
+    expect(first.terminals).toHaveLength(3);
+    expect(first.terminals[0].content).toBe("hello world\n");
+    expect(second.terminals).toEqual(first.terminals);
+    expect(chunks[0].content).toBe("hello");
+  });
 });

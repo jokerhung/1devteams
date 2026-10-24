@@ -5,6 +5,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useStore } from "zustand";
 import { toast } from "sonner";
 import { apiFetch, send } from "@/lib/api";
+import { clientId } from "@/lib/client-id";
+import { loadTicketHistory, type HistoryPage } from "@/lib/ticket-history";
 import type {
   Agent,
   Members,
@@ -25,6 +27,7 @@ import type {
   PendingMessage,
 } from "./types";
 import { ChannelHeader } from "./ChannelHeader";
+import { TerminalDock } from "./TerminalDock";
 import { MessageStream } from "./MessageStream";
 import { Composer } from "./Composer";
 import { RightDrawer } from "./RightDrawer";
@@ -127,8 +130,14 @@ function Channel({
   const [store] = useState(() => createTicketStore(ticket.status));
   const state = useStore(store);
   const [drawer, setDrawer] = useState(false);
+  const [terminal, setTerminal] = useState({ open: false, created: false });
   const [log, setLog] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [historyPage, setHistoryPage] = useState<HistoryPage | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const historyRequest = useRef<AbortController | null>(null);
+  const olderBusy = useRef(false);
   const [error, setError] = useState<Error | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -162,24 +171,38 @@ function Channel({
   }, []);
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     let socket: TicketSocket | undefined;
     async function load() {
       try {
         setError(null);
+        setLoaded(false);
+        setHistoryPage(null);
         const [runtime, history] = await Promise.all([
-          apiFetch<RuntimeState>(`/tickets/${tid}/state`),
-          apiFetch<ChatEvent[]>(`/tickets/${tid}/messages?limit=500`),
+          apiFetch<RuntimeState>(`/tickets/${tid}/state`, {
+            signal: controller.signal,
+          }),
+          loadTicketHistory(tid, controller.signal),
         ]);
         if (cancelled) return;
-        store.getState().ingest(history);
         store.getState().snapshot(runtime);
+        store.setState({ afterSeq: history.last_seq });
+        store.getState().history(history.groups);
+        setHistoryPage(history);
         setLoaded(true);
         socket = new TicketSocket(tid, () => store.getState().afterSeq, {
           snapshot: (value) => store.getState().snapshot(value),
-          connection: (connection) => store.setState({ connection }),
-          event: (event) => {
-            store.getState().ingest([event]);
-            if (["ticket_status", "gate_resolved"].includes(event.event_type)) {
+          connection: (connection) => {
+            if (store.getState().connection !== connection)
+              store.setState({ connection });
+          },
+          events: (events) => {
+            store.getState().ingest(events);
+            if (
+              events.some((event) =>
+                ["ticket_status", "gate_resolved"].includes(event.event_type),
+              )
+            ) {
               void client.invalidateQueries({ queryKey: ["ticket", tid] });
               void client.invalidateQueries({ queryKey: ["notifications"] });
             }
@@ -193,26 +216,56 @@ function Channel({
     void load();
     return () => {
       cancelled = true;
+      controller.abort();
+      historyRequest.current?.abort();
       socket?.close();
     };
   }, [tid, store, client, loadAttempt]);
-  const focusWaiting = state.waiting;
+  async function loadOlder() {
+    if (
+      olderBusy.current ||
+      !historyPage?.has_more ||
+      historyPage.before_seq == null
+    )
+      return;
+    olderBusy.current = true;
+    setLoadingOlder(true);
+    setHistoryError(null);
+    const controller = new AbortController();
+    historyRequest.current = controller;
+    try {
+      const page = await loadTicketHistory(
+        tid,
+        controller.signal,
+        historyPage.before_seq,
+        historyPage.last_seq,
+      );
+      if (controller.signal.aborted) return;
+      store.getState().history(page.groups);
+      setHistoryPage(page);
+    } catch (error) {
+      if (!controller.signal.aborted) setHistoryError((error as Error).message);
+    } finally {
+      olderBusy.current = false;
+      if (!controller.signal.aborted) setLoadingOlder(false);
+    }
+  }
+  const focusWaiting = state.status.startsWith("WAITING")
+    ? state.waiting
+    : null;
+  const waitingKind = focusWaiting?.kind;
+  const waitingNode = focusWaiting?.node_id;
+  const waitingKey = focusWaiting?.payload.gate_key;
   useEffect(() => {
-    if (!focusWaiting || !root.current) return;
+    if (!loaded || !waitingKind || !root.current) return;
     const timer = setTimeout(() => {
       const element = root.current?.querySelector(
-        focusWaiting.kind === "human_confirm"
-          ? "#confirm-box"
-          : "#clarify-prompt",
+        waitingKind === "human_confirm" ? "#confirm-box" : "#clarify-prompt",
       );
       element?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      element?.animate(
-        [{ backgroundColor: "#fef3c7" }, { backgroundColor: "transparent" }],
-        { duration: 1200, iterations: 2 },
-      );
     }, 50);
     return () => clearTimeout(timer);
-  }, [focusWaiting]);
+  }, [loaded, waitingKind, waitingNode, waitingKey]);
   async function refresh() {
     const value = await apiFetch<RuntimeState>(`/tickets/${tid}/state`);
     store.getState().snapshot(value);
@@ -232,7 +285,7 @@ function Channel({
     }
   }
   async function message(text: string, files: Attachment[], retryId?: string) {
-    const id = retryId || crypto.randomUUID();
+    const id = retryId || clientId();
     store.getState().addPending({ id, text, attachments: files });
     try {
       const reply = store.getState().status === "WAITING_USER_INPUT";
@@ -278,130 +331,186 @@ function Channel({
         memberCount={agents.length + (members.data?.users.length || 1)}
         canReport={!!config.data?.can_report}
         onDrawer={() => setDrawer(true)}
+        terminalOpen={terminal.open}
+        onTerminal={() =>
+          setTerminal((previous) => ({ open: !previous.open, created: true }))
+        }
         onAction={async (action) => {
           await send(`/tickets/${tid}/${action}`);
           await refresh();
         }}
       />
-      {state.connection !== "connected" && loaded && (
-        <div
-          role="status"
-          className="bg-amber-50 px-5 py-1 text-xs text-amber-800"
-        >
-          {state.connection === "reconnecting"
-            ? "Đang kết nối lại…"
-            : "Đang kết nối…"}
-        </div>
-      )}
-      {error ? (
-        <div className="p-5">
-          <ErrorState error={error} />
-          <button
-            className="btn btn-light"
-            onClick={() => setLoadAttempt((n) => n + 1)}
+      <TerminalDock
+        projectId={project.id}
+        open={terminal.open}
+        created={terminal.created}
+        onClose={() =>
+          setTerminal((previous) => ({ ...previous, open: false }))
+        }
+      >
+        {state.connection !== "connected" && loaded && (
+          <div
+            role="status"
+            className="bg-amber-50 px-5 py-1 text-xs text-amber-800"
           >
-            Tải lại tin nhắn
-          </button>
-        </div>
-      ) : !loaded ? (
-        <Loading />
-      ) : (
-        <MessageStream
-          groups={state.groups}
-          pending={state.pending}
-          agents={agents}
-          status={state.status}
-          waiting={waiting}
-          canConfirm={!!config.data?.can_confirm && !confirming}
-          onConfirm={confirm}
-          onLog={() => setLog(true)}
-          onRetry={(m: PendingMessage) =>
-            void message(m.text, m.attachments, m.id).catch((e) =>
-              toast.error(e.message),
-            )
-          }
-        />
-      )}
-      <div className="shrink-0 px-5 pt-2">
-        {waiting?.kind === "human_confirm" && !gateAttached && (
-          <InlineConfirmBox
-            gate={{
-              key: String(waiting.payload.gate_key),
-              kind: waiting.kind,
-              payload: waiting.payload,
-            }}
-            active
+            {state.connection === "reconnecting"
+              ? "Đang kết nối lại…"
+              : "Đang kết nối…"}
+          </div>
+        )}
+        {error ? (
+          <div className="p-5">
+            <ErrorState error={error} />
+            <button
+              className="btn btn-light"
+              onClick={() => setLoadAttempt((n) => n + 1)}
+            >
+              Tải lại tin nhắn
+            </button>
+          </div>
+        ) : !loaded ? (
+          <div
+            role="status"
+            className="min-h-0 flex-1 p-5 text-sm text-stone-500"
+          >
+            Đang tải tin nhắn mới nhất…
+          </div>
+        ) : (
+          <MessageStream
+            ticketId={tid}
+            hasOlder={!!historyPage?.has_more}
+            loadingOlder={loadingOlder}
+            historyError={historyError}
+            onLoadOlder={loadOlder}
+            liveSeq={state.afterSeq}
+            groups={state.groups}
+            pending={state.pending}
+            agents={agents}
+            status={state.status}
+            waiting={waiting}
             canConfirm={!!config.data?.can_confirm && !confirming}
             onConfirm={confirm}
+            onLog={() => setLog(true)}
+            onStop={
+              config.data?.can_report
+                ? async () => {
+                    try {
+                      await send(`/tickets/${tid}/stop-agent`);
+                      await refresh();
+                    } catch (e) {
+                      toast.error((e as Error).message);
+                    }
+                  }
+                : undefined
+            }
+            onRetry={(m: PendingMessage) =>
+              void message(m.text, m.attachments, m.id).catch((e) =>
+                toast.error(e.message),
+              )
+            }
           />
         )}
-        {waiting?.kind === "human_input" && (
-          <div
-            id="clarify-prompt"
-            className="mb-2 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-800"
-          >
-            <b>🐝 {currentAgent} đang chờ bạn cung cấp thêm chi tiết</b>
-            <p className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap">
-              {String(
-                waiting.payload.question ||
-                  "Hoàn tất kịch bản tái tạo lỗi bằng câu trả lời bên dưới.",
-              )}
-            </p>
-          </div>
-        )}
-        {state.status === "COMPLETED" && release.commit_hash && (
-          <div className="mb-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
-            <b>Hoàn tất · </b>
-            {release.commit_url ? (
-              <a
-                href={release.commit_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline"
-              >
-                {release.commit_hash}
-              </a>
-            ) : (
-              <code>{release.commit_hash}</code>
-            )}
+        <div className="shrink-0 px-5 pt-2">
+          {state.status === "CANCELLED" && config.data?.can_confirm && (
             <button
-              className="ml-2 underline"
-              onClick={() =>
-                navigator.clipboard
-                  .writeText(release.commit_hash!)
-                  .catch(() => toast.error("Không thể sao chép commit"))
-              }
+              className="btn btn-light mb-2"
+              onClick={async () => {
+                if (
+                  !window.confirm(
+                    "Cất tất cả thay đổi chưa commit (kể cả file mới) trong workspace vào Git stash?",
+                  )
+                )
+                  return;
+                try {
+                  await send(`/tickets/${tid}/stash`);
+                  toast.success("Đã cất thay đổi vào Git stash");
+                } catch (e) {
+                  toast.error((e as Error).message);
+                }
+              }}
             >
-              Copy commit
-            </button>{" "}
-            · {release.branch} · +{release.insertions || 0} −
-            {release.deletions || 0}
-            <details className="mt-1">
-              <summary className="cursor-pointer">File đã phát hành</summary>
-              {release.files?.map((f) => (
-                <p key={f} className="font-mono">
-                  {f}
-                </p>
-              ))}
-            </details>
-          </div>
-        )}
-        {state.status === "OPEN" ? (
-          <button
-            className="btn btn-dark mb-3"
-            disabled={!loaded || !config.data?.can_report}
-            onClick={async () => {
-              try {
-                await send(`/tickets/${tid}/start`);
-                await refresh();
-              } catch (e) {
-                toast.error((e as Error).message);
-              }
-            }}
-          >
-            ▶ Bắt đầu xử lý
-          </button>
-        ) : (
+              Hoàn tác thay đổi chưa commit (Git stash)
+            </button>
+          )}
+          {waiting?.kind === "human_confirm" && !gateAttached && (
+            <InlineConfirmBox
+              gate={{
+                key: String(waiting.payload.gate_key),
+                kind: waiting.kind,
+                payload: waiting.payload,
+              }}
+              active
+              canConfirm={!!config.data?.can_confirm && !confirming}
+              onConfirm={confirm}
+            />
+          )}
+          {waiting?.kind === "human_input" && (
+            <div
+              id="clarify-prompt"
+              className="mb-2 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-800"
+            >
+              <b>🐝 {currentAgent} đang chờ bạn cung cấp thêm chi tiết</b>
+              <p className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap">
+                {String(
+                  waiting.payload.question ||
+                    "Hoàn tất kịch bản tái tạo lỗi bằng câu trả lời bên dưới.",
+                )}
+              </p>
+            </div>
+          )}
+          {state.status === "COMPLETED" && release.commit_hash && (
+            <div className="mb-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
+              <b>Hoàn tất · </b>
+              {release.commit_url ? (
+                <a
+                  href={release.commit_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  {release.commit_hash}
+                </a>
+              ) : (
+                <code>{release.commit_hash}</code>
+              )}
+              <button
+                className="ml-2 underline"
+                onClick={() =>
+                  navigator.clipboard
+                    .writeText(release.commit_hash!)
+                    .catch(() => toast.error("Không thể sao chép commit"))
+                }
+              >
+                Copy commit
+              </button>{" "}
+              · {release.branch} · +{release.insertions || 0} −
+              {release.deletions || 0}
+              <details className="mt-1">
+                <summary className="cursor-pointer">File đã phát hành</summary>
+                {release.files?.map((f) => (
+                  <p key={f} className="font-mono">
+                    {f}
+                  </p>
+                ))}
+              </details>
+            </div>
+          )}
+          {state.status === "OPEN" ? (
+            <button
+              className="btn btn-dark mb-3"
+              disabled={!loaded || !config.data?.can_report}
+              onClick={async () => {
+                try {
+                  await send(`/tickets/${tid}/start`);
+                  await refresh();
+                } catch (e) {
+                  toast.error((e as Error).message);
+                }
+              }}
+            >
+              ▶ Bắt đầu xử lý
+            </button>
+          ) : null}
           <>
             {["COMPLETED", "CANCELLED"].includes(state.status) && (
               <p className="mb-2 text-xs text-stone-500">
@@ -415,43 +524,44 @@ function Channel({
               agents={agents.filter((a) => a.is_active)}
               waiting={waiting}
               disabled={
-                !loaded ||
-                !config.data?.can_report ||
+                config.data?.can_report === false ||
                 ["COMPLETED", "CANCELLED"].includes(state.status)
               }
+              sendDisabled={!loaded || !config.data?.can_report || !!error}
               maxFiles={config.data?.max_files || 5}
               maxMb={config.data?.max_mb || 10}
               onSend={message}
             />
           </>
-        )}
-        <footer className="flex h-8 items-center justify-between gap-2 text-[11px] text-stone-500">
-          <span className="truncate">
-            {state.status === "COMPLETED"
-              ? release.commit_hash
-                ? `Hoàn tất: Commit ${release.commit_hash} đã được đẩy lên Git.`
-                : "Workflow đã hoàn tất"
-              : waiting
-                ? `${currentAgent}: Đang chờ người dùng ${waiting.kind === "human_confirm" ? "xác nhận để commit & push Git" : "trả lời"}…`
-                : `${currentAgent}: ${state.status === "RUNNING" ? latestTurn?.logLines.at(-1)?.text || "Đang làm việc…" : state.status}`}
-          </span>
-          <span className="shrink-0 font-mono text-[10px]">
-            claude-agent-acp • codex-acp{" "}
-            <span
-              className={
-                state.connection === "connected"
-                  ? "text-emerald-500"
-                  : "text-amber-500"
-              }
-            >
-              ●
+          <footer className="flex h-8 items-center justify-between gap-2 text-[11px] text-stone-500">
+            <span className="truncate">
+              {state.status === "COMPLETED"
+                ? release.commit_hash
+                  ? `Hoàn tất: Commit ${release.commit_hash} đã được đẩy lên Git.`
+                  : "Workflow đã hoàn tất"
+                : waiting
+                  ? `${currentAgent}: Đang chờ người dùng ${waiting.kind === "human_confirm" ? "xác nhận để commit & push Git" : "trả lời"}…`
+                  : `${currentAgent}: ${state.status === "RUNNING" ? latestTurn?.logLines.at(-1)?.text || "Đang làm việc…" : state.status}`}
             </span>
-          </span>
-        </footer>
-      </div>
+            <span className="shrink-0 font-mono text-[10px]">
+              claude-agent-acp • codex-acp{" "}
+              <span
+                className={
+                  state.connection === "connected"
+                    ? "text-emerald-500"
+                    : "text-amber-500"
+                }
+              >
+                ●
+              </span>
+            </span>
+          </footer>
+        </div>
+      </TerminalDock>
       {drawer &&
         (version.data ? (
           <RightDrawer
+            projectId={project.id}
             graph={version.data.graph}
             version={ticket.workflow_version}
             agents={agents}

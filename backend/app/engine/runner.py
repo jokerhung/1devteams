@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from langgraph.types import Command
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.acp.client import RuntimePolicyError
 from app.acp.pool import ACPProcessPool
@@ -44,6 +44,8 @@ class TicketRunner:
         self.owned: dict[str, str] = {}
         self.action_locks: dict[str, asyncio.Lock] = {}
         self.closed = False
+        self.adhoc_tasks: dict[str, asyncio.Task[None]] = {}
+        self.capacity = asyncio.Semaphore(settings.max_concurrent_tickets)
 
     async def load(self, tid: str) -> tuple[Any, RunContext, Ticket]:
         async with self.sessions() as db:
@@ -127,12 +129,27 @@ class TicketRunner:
             rows = (
                 await db.scalars(
                     select(Ticket)
-                    .where(Ticket.status.in_(["RUNNING", "WAITING_USER_INPUT", "WAITING_USER_CONFIRM"]))
+                    .where(
+                        or_(
+                            Ticket.status.in_(["RUNNING", "WAITING_USER_INPUT", "WAITING_USER_CONFIRM"]),
+                            Ticket.result["adhoc_writer"].as_boolean().is_(True),
+                        )
+                    )
                     .order_by(Ticket.created_at)
                 )
             ).all()
         for ticket in rows:
             try:
+                if ticket.result.get("adhoc_writer") and ticket.status in {"OPEN", "FAILED"}:
+                    async with self.sessions() as db:
+                        project = await db.get(Project, ticket.project_id)
+                    ctx = self.context(ticket, project)
+                    ctx.had_writer = True
+                    key = os.path.normcase(str(ctx.git.workspace.resolve()))
+                    if key in self.owners:
+                        raise ValueError("Conflicting recovered workspace owners")
+                    await self.acquire(ticket.id, ctx)
+                    continue
                 graph, ctx, _ = await self.load(ticket.id)
                 checkpoint = await graph.aget_state(self.config(ticket.id, ctx))
                 if ticket.status == "RUNNING":
@@ -188,6 +205,8 @@ class TicketRunner:
             self.workspace_locks[path].release()
 
     def schedule(self, tid: str, graph: Any, ctx: RunContext, value: Any) -> None:
+        if tid in self.adhoc_tasks:
+            fail(409, "Agent đang trả lời ad-hoc; thử lại sau", "agent_busy")
         if self.closed:
             fail(503, "Runner đang dừng", "runner_closed")
         if tid in self.tasks and not self.tasks[tid].done():
@@ -196,7 +215,12 @@ class TicketRunner:
 
     async def execute(self, tid: str, graph: Any, ctx: RunContext, value: Any) -> None:
         retain = False
+        admitted = False
         try:
+            if self.capacity.locked():
+                await ctx.emit("log", "Đang chờ giới hạn ticket chạy đồng thời…")
+            await self.capacity.acquire()
+            admitted = True
             await self.acquire(tid, ctx)
             await ctx.git.exclude_attachments()
             await ctx.status("RUNNING")
@@ -210,7 +234,7 @@ class TicketRunner:
                     "WAITING_USER_CONFIRM" if kind == "human_confirm" else "WAITING_USER_INPUT",
                     payload["node_id"],
                 )
-                retain = kind == "human_confirm" or bool(snapshot.values.get("wrote_files"))
+                retain = kind == "human_confirm" or bool(snapshot.values.get("wrote_files")) or ctx.had_writer
         except asyncio.CancelledError:
             raise
         except Exception as error:
@@ -227,10 +251,134 @@ class TicketRunner:
             async with self.sessions() as db:
                 await resolve_gate(db, tid, "FAILED", events=self.events)
         finally:
+            if admitted:
+                self.capacity.release()
             if not retain:
                 self.release(tid)
                 await self.pool.close_ticket(tid)
             self.tasks.pop(tid, None)
+
+    async def adhoc(self, tid: str, agent_id: str, text: str, user: Any) -> None:
+        async with self.action_locks.setdefault(tid, asyncio.Lock()):
+            ticket = await self.authorize(tid, user)
+            if tid in self.tasks or tid in self.adhoc_tasks:
+                fail(409, "Agent đang bận; gửi lại sau lượt hiện tại", "agent_busy")
+            if ticket.status in {"COMPLETED", "CANCELLED"}:
+                fail(409, "Ticket đã kết thúc", "invalid_ticket_status")
+            async with self.sessions() as db:
+                if agent_id not in {
+                    a.id for a in await effective_agents(db, ticket.project_id) if a.is_active
+                }:
+                    fail(422, "Mention không thuộc effective agents", "invalid_mention")
+                project = await db.get(Project, ticket.project_id)
+            ctx = self.context(ticket, project)
+            self.adhoc_tasks[tid] = asyncio.create_task(self.execute_adhoc(ticket, ctx, agent_id, text))
+
+    async def execute_adhoc(self, ticket: Ticket, ctx: RunContext, aid: str, text: str) -> None:
+        from uuid import uuid4
+
+        from app.acp.security import scrub, scrub_data
+        from app.engine.nodes import stream_turn
+
+        run_id = str(uuid4())
+        retained = ticket.id in self.owned
+        admitted = False
+        handle = aid
+        try:
+            cfg = await ctx.agent(aid)
+            handle = cfg.handle
+            await self.capacity.acquire()
+            admitted = True
+            await self.acquire(ticket.id, ctx)
+            await ctx.git.exclude_attachments()
+            if cfg.permission_profile.allow_write:
+                ctx.had_writer = True
+                retained = True
+                async with self.sessions() as db:
+                    current_ticket = await db.get(Ticket, ticket.id)
+                    current_ticket.result = {**current_ticket.result, "adhoc_writer": True}
+                    await db.commit()
+            session = await self.pool.get_or_start(cfg, ctx.git.workspace, ticket.id)
+            await ctx.emit(
+                "agent_turn_start",
+                sender_type="AGENT",
+                sender_name=handle,
+                node_id="adhoc",
+                run_id=run_id,
+                metadata={"adhoc": True, "model": cfg.model, "runtime": cfg.runtime},
+            )
+            history = await ctx.chat_inputs()
+            prompt = (
+                "Ad-hoc reply outside workflow. Do not commit/push/release.\n"
+                f"Ticket #{ticket.number}: {ticket.title}\n{ticket.description}\n"
+            )
+            for message in history:
+                prompt += f"\nUser: {message['text']}"
+                for attachment in message.get("attachments", []):
+                    prompt += f"\nAttachment: {attachment['path']} ({attachment['mime']})"
+            prompt += "\nReply to: " + text
+            content, files = await stream_turn(ctx, session, prompt, "adhoc", run_id)
+            content = scrub(content, cfg)
+            await ctx.emit(
+                "agent_turn_end",
+                content,
+                sender_type="AGENT",
+                sender_name=handle,
+                node_id="adhoc",
+                run_id=run_id,
+                metadata={
+                    **scrub_data(ctx.completion_metadata or {}, cfg),
+                    "adhoc": True,
+                    "modified_files": files,
+                },
+            )
+        except asyncio.CancelledError:
+            await ctx.emit(
+                "agent_turn_end",
+                "Đã dừng agent",
+                sender_type="AGENT",
+                sender_name=handle,
+                node_id="adhoc",
+                run_id=run_id,
+                metadata={"stopped": True, "adhoc": True},
+            )
+            raise
+        except Exception:
+            await ctx.emit(
+                "error",
+                "Ad-hoc agent gặp lỗi; kiểm tra cấu hình runtime",
+                sender_type="AGENT",
+                sender_name=handle,
+                node_id="adhoc",
+                run_id=run_id,
+            )
+        finally:
+            if admitted:
+                self.capacity.release()
+            if not retained:
+                self.release(ticket.id)
+            self.adhoc_tasks.pop(ticket.id, None)
+
+    async def stop_agent(self, tid: str, user: Any) -> None:
+        async with self.action_locks.setdefault(tid, asyncio.Lock()):
+            await self.authorize(tid, user)
+            task = self.adhoc_tasks.get(tid) or self.tasks.get(tid)
+            if task is None:
+                fail(409, "Không có agent đang chạy", "agent_idle")
+            for (ticket_id, _), session in list(self.pool.sessions.items()):
+                if ticket_id == tid and session.busy:
+                    await session.cancel()
+            was_adhoc = tid in self.adhoc_tasks
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            if not was_adhoc:
+                async with self.sessions() as db:
+                    ticket = await db.get(Ticket, tid)
+                if ticket.status == "RUNNING":
+                    ctx = self.contexts[tid]
+                    reason = "Người dùng đã dừng agent; bấm Thử lại để chạy lại node"
+                    await ctx.emit("error", reason)
+                    await ctx.status("FAILED", ctx.node_id, {"error": reason})
 
     async def start(self, tid: str, user: Any) -> None:
         async with self.action_locks.setdefault(tid, asyncio.Lock()):
@@ -306,12 +454,18 @@ class TicketRunner:
             ticket = await self.authorize(tid, user)
             if ticket.status in {"COMPLETED", "CANCELLED"}:
                 fail(409, "Ticket đã kết thúc", "invalid_ticket_status")
-            task = self.tasks.get(tid)
+            task = self.adhoc_tasks.get(tid) or self.tasks.get(tid)
             if task:
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
             await self.pool.close_ticket(tid)
             self.release(tid)
+            async with self.sessions() as db:
+                current_ticket = await db.get(Ticket, tid)
+                current_ticket.result = {
+                    k: v for k, v in current_ticket.result.items() if k != "adhoc_writer"
+                }
+                await db.commit()
             # Cancellation must work even when an agent was disabled/deleted or its snapshot
             # can no longer compile. It needs ticket/project identity, not a runnable graph.
             async with self.sessions() as db:
@@ -372,9 +526,11 @@ class TicketRunner:
 
     async def close(self) -> None:
         self.closed = True
-        for task in list(self.tasks.values()):
+        for task in [*self.tasks.values(), *self.adhoc_tasks.values()]:
             task.cancel()
-        await asyncio.gather(*list(self.tasks.values()), return_exceptions=True)
+        await asyncio.gather(
+            *list(self.tasks.values()), *list(self.adhoc_tasks.values()), return_exceptions=True
+        )
         for tid in list(self.owned):
             self.release(tid)
         for tid in self.contexts:

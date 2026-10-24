@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Request
 from sqlalchemy import delete, select, update
 
-from app.core.deps import DB, Admin, CurrentUser, record
+from app.core.deps import DB, Admin, CurrentUser, fail, record
 from app.db.base import now
 from app.db.models import Agent, ProjectMember, TeamAgent
 from app.schemas.agent import (
@@ -18,10 +18,18 @@ from app.schemas.agent import (
 from app.schemas.common import Success
 from app.services import connections
 from app.services.agent_service import guard_agent_removal, prepare_agent, public_agent, runtime_config, usage
+from app.services.audit import audit
 from app.services.common import commit
 from app.services.seed import PRESETS
 
 router = APIRouter(prefix="/agents", tags=["Agents"])
+
+
+async def validate_fallback(db, identifier: str | None) -> None:
+    if identifier:
+        target = await db.get(Agent, identifier)
+        if target is None or not target.is_active or target.runtime != "openai-api":
+            fail(422, "Agent fallback phải là OpenAI API đang hoạt động", "invalid_fallback")
 
 
 @router.get("/models-catalog")
@@ -51,7 +59,10 @@ async def list_agents(db: DB, user: CurrentUser, active: bool | None = None):
 @router.post("", response_model=AgentOut, status_code=201)
 async def create_agent(body: AgentCreate, request: Request, db: DB, user: Admin):
     agent = Agent(**await prepare_agent(body, request.app.state.settings))
+    await validate_fallback(db, agent.fallback_agent_id)
     db.add(agent)
+    await db.flush()
+    await audit(db, "agent.create", agent.id, user_id=user.id, payload={"handle": agent.handle})
     await commit(db)
     return public_agent(agent)
 
@@ -71,14 +82,24 @@ async def patch_agent(aid: UUID, body: AgentPatch, request: Request, db: DB, use
     )
     await db.refresh(agent)
     values = await prepare_agent(body, request.app.state.settings, agent)
+    await validate_fallback(db, values.get("fallback_agent_id", agent.fallback_agent_id))
     changed = any(getattr(agent, key) != value for key, value in values.items())
     if changed:
+        affected = [tid for tid, aid in request.app.state.acp_pool.sessions if aid == agent.id]
         if values.get("is_active") is False and agent.is_active:
             await guard_agent_removal(db, agent)
         for key, value in values.items():
             setattr(agent, key, value)
         agent.config_version += 1
         agent.restarted_at = now()
+        await audit(
+            db,
+            "agent.permission" if "permission_profile" in values else "agent.update",
+            agent.id,
+            user_id=user.id,
+            payload={"fields": sorted(values), "restart": True, "tickets": affected},
+            ip=request.client.host if request.client else None,
+        )
         await commit(db)
         await request.app.state.acp_pool.restart_agent(agent.id, agent.config_version)
     return {"agent": public_agent(agent), "restart": changed}
@@ -93,6 +114,16 @@ async def restart_agent(aid: UUID, request: Request, db: DB, user: Admin):
         .values(config_version=Agent.config_version + 1, restarted_at=now())
     )
     await db.refresh(agent)
+    await audit(
+        db,
+        "agent.restart",
+        agent.id,
+        user_id=user.id,
+        payload={
+            "restart": True,
+            "tickets": [tid for tid, aid in request.app.state.acp_pool.sessions if aid == agent.id],
+        },
+    )
     await commit(db)
     await request.app.state.acp_pool.restart_agent(agent.id, agent.config_version)
     return {"agent": public_agent(agent), "restart": True}

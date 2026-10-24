@@ -13,7 +13,9 @@ export async function GET(request: Request) {
     channels.length > 30 ||
     channels.some(
       (value) =>
-        !/^(users\/me|(?:projects|tickets)\/[a-f0-9-]{36})$/.test(value),
+        !/^(users\/me|(?:projects|tickets|terminal)\/[a-f0-9-]{36})$/.test(
+          value,
+        ),
     )
   )
     return new Response(null, { status: 400 });
@@ -22,6 +24,10 @@ export async function GET(request: Request) {
     Number(new URL(request.url).searchParams.get("after_seq")) || 0,
   );
   const sockets: WebSocket[] = [];
+  const view =
+    new URL(request.url).searchParams.get("view") === "chat"
+      ? "&view=chat"
+      : "";
   let heartbeat: ReturnType<typeof setInterval>;
   let closed = false;
   const cleanup = () => {
@@ -35,7 +41,7 @@ export async function GET(request: Request) {
       const encoder = new TextEncoder();
       for (const channel of channels) {
         const socket = new WebSocket(
-          `${backendUrl.replace(/^http/, "ws")}/ws/${channel}?after_seq=${Math.floor(after)}`,
+          `${backendUrl.replace(/^http/, "ws")}/ws/${channel}?after_seq=${Math.floor(after)}${channel.startsWith("tickets/") ? view : ""}`,
           { headers: { Authorization: `Bearer ${token}` } },
         );
         sockets.push(socket);

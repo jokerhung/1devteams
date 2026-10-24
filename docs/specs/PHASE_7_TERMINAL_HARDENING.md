@@ -72,7 +72,10 @@
 - Kiểm thử bảo mật guard: bộ 50+ chuỗi lệnh né chặn (`g''it commit`, `git${IFS}push`, `powershell -c "git push"`, `cmd /c git push`, alias…) → tất cả bị chặn với Developer/Tester. Lệnh khó phân tích (có biến shell, eval, base64) → **mặc định deny** với profile có `blocked_commands` chứa git.
 
 ## 8. Definition of Done
-- [ ] Terminal từ xa hoạt động trên Windows, resize đúng, reconnect giữ phiên.
-- [ ] Fallback model hoạt động theo chính sách, hiển thị rõ trong chat.
-- [ ] Bộ test né guard pass 100%.
+- [x] Terminal từ xa hoạt động trên Windows, resize đúng, reconnect giữ phiên.
+- [x] Fallback model hoạt động theo chính sách, hiển thị rõ trong chat (provider giả lập).
+- [x] Bộ test né guard pass 100% (63 chuỗi × 2 profile).
 - [ ] Cài đặt mới trên máy Windows sạch bằng `install.ps1` + `start.ps1` chạy được happy path.
+
+Triển khai và bằng chứng kiểm thử: [PHASE_7_IMPLEMENTATION_NOTES.md](PHASE_7_IMPLEMENTATION_NOTES.md).
+Nghiệm thu Windows sạch/native provider còn cần môi trường riêng; không bỏ policy gate Phase 3.

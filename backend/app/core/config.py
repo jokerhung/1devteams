@@ -5,7 +5,7 @@ import shutil
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -31,6 +31,17 @@ class Settings(BaseSettings):
     attach_max_files: int = Field(default=5, gt=0)
     attach_max_mb: int = Field(default=10, gt=0)
     attach_allow_scripts: bool = False
+    attach_quota_mb: int = Field(default=200, gt=0)
+    enable_remote_terminal: bool = False
+    trusted_native_acp: bool = False
+    acp_inherit_provider_env: bool = True
+    terminal_idle_seconds: int = Field(default=600, ge=1)
+    terminal_audit_input: bool = False
+    max_terminal_sessions: int = Field(default=8, gt=0)
+    max_concurrent_tickets: int = Field(default=4, gt=0)
+    max_event_chars: int = Field(default=100000, ge=1024)
+    overload_patterns: str = "capacity,overloaded,429,529,rate limit"
+    model_retry_delays: str = "30,60"
     claude_acp_bin: str = "claude-agent-acp"
     codex_acp_bin: str = "codex-acp"
     allowed_workspace_roots: str = r"D:\VETC"
@@ -41,6 +52,16 @@ class Settings(BaseSettings):
     api_allowed_http_hosts: str = "localhost,127.0.0.1"
     api_allowed_private_hosts: str = ""
     cors_origins: str = "http://localhost:3060"
+
+    @field_validator("model_retry_delays")
+    @classmethod
+    def retry_delays(cls, value: str) -> str:
+        import math
+
+        delays = [float(part.strip()) for part in value.split(",")]
+        if len(delays) > 2 or any(not math.isfinite(delay) or delay < 0 for delay in delays):
+            raise ValueError("Use at most two finite, nonnegative retry delays")
+        return value
 
     @property
     def workspace_roots(self) -> list[Path]:
