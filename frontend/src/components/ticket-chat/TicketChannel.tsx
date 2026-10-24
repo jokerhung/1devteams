@@ -28,6 +28,7 @@ import type {
 } from "./types";
 import { ChannelHeader } from "./ChannelHeader";
 import { TerminalDock } from "./TerminalDock";
+import { WorkspaceFiles } from "./WorkspaceFiles";
 import { MessageStream } from "./MessageStream";
 import { Composer } from "./Composer";
 import { RightDrawer } from "./RightDrawer";
@@ -131,6 +132,7 @@ function Channel({
   const state = useStore(store);
   const [drawer, setDrawer] = useState(false);
   const [terminal, setTerminal] = useState({ open: false, created: false });
+  const [filesOpen, setFilesOpen] = useState(false);
   const [log, setLog] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [historyPage, setHistoryPage] = useState<HistoryPage | null>(null);
@@ -333,6 +335,8 @@ function Channel({
         canRelease={!!config.data?.can_confirm}
         onDrawer={() => setDrawer(true)}
         terminalOpen={terminal.open}
+        filesOpen={filesOpen}
+        onFiles={() => setFilesOpen((previous) => !previous)}
         onTerminal={() =>
           setTerminal((previous) => ({ open: !previous.open, created: true }))
         }
@@ -341,224 +345,234 @@ function Channel({
           await refresh();
         }}
       />
-      <TerminalDock
-        projectId={project.id}
-        open={terminal.open}
-        created={terminal.created}
-        onClose={() =>
-          setTerminal((previous) => ({ ...previous, open: false }))
-        }
-      >
-        {state.connection !== "connected" && loaded && (
-          <div
-            role="status"
-            className="bg-amber-50 px-5 py-1 text-xs text-amber-800"
-          >
-            {state.connection === "reconnecting"
-              ? "Đang kết nối lại…"
-              : "Đang kết nối…"}
-          </div>
-        )}
-        {error ? (
-          <div className="p-5">
-            <ErrorState error={error} />
-            <button
-              className="btn btn-light"
-              onClick={() => setLoadAttempt((n) => n + 1)}
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <TerminalDock
+          projectId={project.id}
+          open={terminal.open}
+          created={terminal.created}
+          onClose={() =>
+            setTerminal((previous) => ({ ...previous, open: false }))
+          }
+        >
+          {state.connection !== "connected" && loaded && (
+            <div
+              role="status"
+              className="bg-amber-50 px-5 py-1 text-xs text-amber-800"
             >
-              Tải lại tin nhắn
-            </button>
-          </div>
-        ) : !loaded ? (
-          <div
-            role="status"
-            className="min-h-0 flex-1 p-5 text-sm text-stone-500"
-          >
-            Đang tải tin nhắn mới nhất…
-          </div>
-        ) : (
-          <MessageStream
-            ticketId={tid}
-            hasOlder={!!historyPage?.has_more}
-            loadingOlder={loadingOlder}
-            historyError={historyError}
-            onLoadOlder={loadOlder}
-            liveSeq={state.afterSeq}
-            groups={state.groups}
-            pending={state.pending}
-            agents={agents}
-            status={state.status}
-            waiting={waiting}
-            canConfirm={!!config.data?.can_confirm && !confirming}
-            onConfirm={confirm}
-            onLog={() => setLog(true)}
-            onStop={
-              config.data?.can_report
-                ? async () => {
-                    try {
-                      await send(`/tickets/${tid}/stop-agent`);
-                      await refresh();
-                    } catch (e) {
-                      toast.error((e as Error).message);
-                    }
-                  }
-                : undefined
-            }
-            onRetry={(m: PendingMessage) =>
-              void message(m.text, m.attachments, m.id).catch((e) =>
-                toast.error(e.message),
-              )
-            }
-          />
-        )}
-        <div className="shrink-0 px-5 pt-2">
-          {state.status === "CANCELLED" && config.data?.can_confirm && (
-            <button
-              className="btn btn-light mb-2"
-              onClick={async () => {
-                if (
-                  !window.confirm(
-                    "Cất tất cả thay đổi chưa commit (kể cả file mới) trong workspace vào Git stash?",
-                  )
-                )
-                  return;
-                try {
-                  await send(`/tickets/${tid}/stash`);
-                  toast.success("Đã cất thay đổi vào Git stash");
-                } catch (e) {
-                  toast.error((e as Error).message);
-                }
-              }}
-            >
-              Hoàn tác thay đổi chưa commit (Git stash)
-            </button>
+              {state.connection === "reconnecting"
+                ? "Đang kết nối lại…"
+                : "Đang kết nối…"}
+            </div>
           )}
-          {waiting?.kind === "human_confirm" && !gateAttached && (
-            <InlineConfirmBox
-              gate={{
-                key: String(waiting.payload.gate_key),
-                kind: waiting.kind,
-                payload: waiting.payload,
-              }}
-              active
+          {error ? (
+            <div className="p-5">
+              <ErrorState error={error} />
+              <button
+                className="btn btn-light"
+                onClick={() => setLoadAttempt((n) => n + 1)}
+              >
+                Tải lại tin nhắn
+              </button>
+            </div>
+          ) : !loaded ? (
+            <div
+              role="status"
+              className="min-h-0 flex-1 p-5 text-sm text-stone-500"
+            >
+              Đang tải tin nhắn mới nhất…
+            </div>
+          ) : (
+            <MessageStream
+              ticketId={tid}
+              hasOlder={!!historyPage?.has_more}
+              loadingOlder={loadingOlder}
+              historyError={historyError}
+              onLoadOlder={loadOlder}
+              liveSeq={state.afterSeq}
+              groups={state.groups}
+              pending={state.pending}
+              agents={agents}
+              status={state.status}
+              waiting={waiting}
               canConfirm={!!config.data?.can_confirm && !confirming}
               onConfirm={confirm}
-            />
-          )}
-          {waiting?.kind === "human_input" && (
-            <div
-              id="clarify-prompt"
-              className="mb-2 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-800"
-            >
-              <b>🐝 {currentAgent} đang chờ bạn cung cấp thêm chi tiết</b>
-              <p className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap">
-                {String(
-                  waiting.payload.question ||
-                    "Hoàn tất kịch bản tái tạo lỗi bằng câu trả lời bên dưới.",
-                )}
-              </p>
-            </div>
-          )}
-          {state.status === "COMPLETED" && release.commit_hash && (
-            <div className="mb-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
-              <b>Hoàn tất · </b>
-              {release.commit_url ? (
-                <a
-                  href={release.commit_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline"
-                >
-                  {release.commit_hash}
-                </a>
-              ) : (
-                <code>{release.commit_hash}</code>
-              )}
-              <button
-                className="ml-2 underline"
-                onClick={() =>
-                  navigator.clipboard
-                    .writeText(release.commit_hash!)
-                    .catch(() => toast.error("Không thể sao chép commit"))
-                }
-              >
-                Copy commit
-              </button>{" "}
-              · {release.branch} · +{release.insertions || 0} −
-              {release.deletions || 0}
-              <details className="mt-1">
-                <summary className="cursor-pointer">File đã phát hành</summary>
-                {release.files?.map((f) => (
-                  <p key={f} className="font-mono">
-                    {f}
-                  </p>
-                ))}
-              </details>
-            </div>
-          )}
-          {state.status === "OPEN" ? (
-            <button
-              className="btn btn-dark mb-3"
-              disabled={!loaded || !config.data?.can_report}
-              onClick={async () => {
-                try {
-                  await send(`/tickets/${tid}/start`);
-                  await refresh();
-                } catch (e) {
-                  toast.error((e as Error).message);
-                }
-              }}
-            >
-              ▶ Bắt đầu xử lý
-            </button>
-          ) : null}
-          <>
-            {["COMPLETED", "CANCELLED"].includes(state.status) && (
-              <p className="mb-2 text-xs text-stone-500">
-                Ticket đã kết thúc; không thể gửi thêm tin nhắn hoặc tệp.
-              </p>
-            )}
-            <Composer
-              tid={tid}
-              userId={user.id}
-              slug={ticket.channel_slug}
-              agents={agents.filter((a) => a.is_active)}
-              waiting={waiting}
-              disabled={
-                config.data?.can_report === false ||
-                ["COMPLETED", "CANCELLED"].includes(state.status)
+              onLog={() => setLog(true)}
+              onStop={
+                config.data?.can_report
+                  ? async () => {
+                      try {
+                        await send(`/tickets/${tid}/stop-agent`);
+                        await refresh();
+                      } catch (e) {
+                        toast.error((e as Error).message);
+                      }
+                    }
+                  : undefined
               }
-              sendDisabled={!loaded || !config.data?.can_report || !!error}
-              maxFiles={config.data?.max_files || 5}
-              maxMb={config.data?.max_mb || 10}
-              onSend={message}
+              onRetry={(m: PendingMessage) =>
+                void message(m.text, m.attachments, m.id).catch((e) =>
+                  toast.error(e.message),
+                )
+              }
             />
-          </>
-          <footer className="flex h-8 items-center justify-between gap-2 text-[11px] text-stone-500">
-            <span className="truncate">
-              {state.status === "COMPLETED"
-                ? release.commit_hash
-                  ? `Hoàn tất: Commit ${release.commit_hash} đã được đẩy lên Git.`
-                  : "Workflow đã hoàn tất"
-                : waiting
-                  ? `${currentAgent}: Đang chờ người dùng ${waiting.kind === "human_confirm" ? "xác nhận để commit & push Git" : "trả lời"}…`
-                  : `${currentAgent}: ${state.status === "RUNNING" ? latestTurn?.logLines.at(-1)?.text || "Đang làm việc…" : state.status}`}
-            </span>
-            <span className="shrink-0 font-mono text-[10px]">
-              claude-agent-acp • codex-acp{" "}
-              <span
-                className={
-                  state.connection === "connected"
-                    ? "text-emerald-500"
-                    : "text-amber-500"
-                }
+          )}
+          <div className="shrink-0 px-5 pt-2">
+            {state.status === "CANCELLED" && config.data?.can_confirm && (
+              <button
+                className="btn btn-light mb-2"
+                onClick={async () => {
+                  if (
+                    !window.confirm(
+                      "Cất tất cả thay đổi chưa commit (kể cả file mới) trong workspace vào Git stash?",
+                    )
+                  )
+                    return;
+                  try {
+                    await send(`/tickets/${tid}/stash`);
+                    toast.success("Đã cất thay đổi vào Git stash");
+                  } catch (e) {
+                    toast.error((e as Error).message);
+                  }
+                }}
               >
-                ●
+                Hoàn tác thay đổi chưa commit (Git stash)
+              </button>
+            )}
+            {waiting?.kind === "human_confirm" && !gateAttached && (
+              <InlineConfirmBox
+                gate={{
+                  key: String(waiting.payload.gate_key),
+                  kind: waiting.kind,
+                  payload: waiting.payload,
+                }}
+                active
+                canConfirm={!!config.data?.can_confirm && !confirming}
+                onConfirm={confirm}
+              />
+            )}
+            {waiting?.kind === "human_input" && (
+              <div
+                id="clarify-prompt"
+                className="mb-2 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-800"
+              >
+                <b>🐝 {currentAgent} đang chờ bạn cung cấp thêm chi tiết</b>
+                <p className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap">
+                  {String(
+                    waiting.payload.question ||
+                      "Hoàn tất kịch bản tái tạo lỗi bằng câu trả lời bên dưới.",
+                  )}
+                </p>
+              </div>
+            )}
+            {state.status === "COMPLETED" && release.commit_hash && (
+              <div className="mb-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
+                <b>Hoàn tất · </b>
+                {release.commit_url ? (
+                  <a
+                    href={release.commit_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline"
+                  >
+                    {release.commit_hash}
+                  </a>
+                ) : (
+                  <code>{release.commit_hash}</code>
+                )}
+                <button
+                  className="ml-2 underline"
+                  onClick={() =>
+                    navigator.clipboard
+                      .writeText(release.commit_hash!)
+                      .catch(() => toast.error("Không thể sao chép commit"))
+                  }
+                >
+                  Copy commit
+                </button>{" "}
+                · {release.branch} · +{release.insertions || 0} −
+                {release.deletions || 0}
+                <details className="mt-1">
+                  <summary className="cursor-pointer">
+                    File đã phát hành
+                  </summary>
+                  {release.files?.map((f) => (
+                    <p key={f} className="font-mono">
+                      {f}
+                    </p>
+                  ))}
+                </details>
+              </div>
+            )}
+            {state.status === "OPEN" ? (
+              <button
+                className="btn btn-dark mb-3"
+                disabled={!loaded || !config.data?.can_report}
+                onClick={async () => {
+                  try {
+                    await send(`/tickets/${tid}/start`);
+                    await refresh();
+                  } catch (e) {
+                    toast.error((e as Error).message);
+                  }
+                }}
+              >
+                ▶ Bắt đầu xử lý
+              </button>
+            ) : null}
+            <>
+              {["COMPLETED", "CANCELLED"].includes(state.status) && (
+                <p className="mb-2 text-xs text-stone-500">
+                  Ticket đã kết thúc; không thể gửi thêm tin nhắn hoặc tệp.
+                </p>
+              )}
+              <Composer
+                tid={tid}
+                userId={user.id}
+                slug={ticket.channel_slug}
+                agents={agents.filter((a) => a.is_active)}
+                waiting={waiting}
+                disabled={
+                  config.data?.can_report === false ||
+                  ["COMPLETED", "CANCELLED"].includes(state.status)
+                }
+                sendDisabled={!loaded || !config.data?.can_report || !!error}
+                maxFiles={config.data?.max_files || 5}
+                maxMb={config.data?.max_mb || 10}
+                onSend={message}
+              />
+            </>
+            <footer className="flex h-8 items-center justify-between gap-2 text-[11px] text-stone-500">
+              <span className="truncate">
+                {state.status === "COMPLETED"
+                  ? release.commit_hash
+                    ? `Hoàn tất: Commit ${release.commit_hash} đã được đẩy lên Git.`
+                    : "Workflow đã hoàn tất"
+                  : waiting
+                    ? `${currentAgent}: Đang chờ người dùng ${waiting.kind === "human_confirm" ? "xác nhận để commit & push Git" : "trả lời"}…`
+                    : `${currentAgent}: ${state.status === "RUNNING" ? latestTurn?.logLines.at(-1)?.text || "Đang làm việc…" : state.status}`}
               </span>
-            </span>
-          </footer>
-        </div>
-      </TerminalDock>
+              <span className="shrink-0 font-mono text-[10px]">
+                claude-agent-acp • codex-acp{" "}
+                <span
+                  className={
+                    state.connection === "connected"
+                      ? "text-emerald-500"
+                      : "text-amber-500"
+                  }
+                >
+                  ●
+                </span>
+              </span>
+            </footer>
+          </div>
+        </TerminalDock>
+        {filesOpen && (
+          <WorkspaceFiles
+            projectId={project.id}
+            onClose={() => setFilesOpen(false)}
+          />
+        )}
+      </div>
       {drawer &&
         (version.data ? (
           <RightDrawer

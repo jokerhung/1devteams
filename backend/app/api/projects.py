@@ -144,6 +144,36 @@ async def get_project(pid: UUID, db: DB, user: CurrentUser):
     return await require_project(db, str(pid), user)
 
 
+@router.get("/{pid}/files")
+async def workspace_files(
+    pid: UUID, request: Request, db: DB, user: CurrentUser, path: str = Query(default="", max_length=2000)
+) -> dict:
+    from app.services.workspace_files import list_workspace_files
+
+    project = await require_project(db, str(pid), user)
+    try:
+        return await asyncio.to_thread(
+            list_workspace_files, project.workspace_path, request.app.state.settings.workspace_roots, path
+        )
+    except (OSError, ValueError):
+        fail(400, "Không đọc được thư mục workspace", "directory_unreadable")
+
+
+@router.get("/{pid}/file")
+async def workspace_file(
+    pid: UUID, request: Request, db: DB, user: CurrentUser, path: str = Query(min_length=1, max_length=2000)
+) -> dict:
+    from app.services.workspace_files import read_workspace_file
+
+    project = await require_project(db, str(pid), user)
+    try:
+        return await asyncio.to_thread(
+            read_workspace_file, project.workspace_path, request.app.state.settings.workspace_roots, path
+        )
+    except (OSError, ValueError):
+        fail(400, "Không đọc được file workspace", "file_unreadable")
+
+
 @router.patch("/{pid}", response_model=ProjectOut)
 async def patch_project(pid: UUID, body: ProjectPatch, request: Request, db: DB, user: CurrentUser):
     entity = await require_project(db, str(pid), user, write=True)
