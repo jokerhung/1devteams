@@ -41,6 +41,7 @@ class Agent(Entity, Base):
     api_key_last4: Mapped[str | None] = mapped_column(String(4))
     api_params: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     model: Mapped[str | None] = mapped_column(String(100))
+    reasoning_effort: Mapped[str | None] = mapped_column(String(100))
     fallback_model: Mapped[str | None] = mapped_column(String(100))
     fallback_runtime: Mapped[str | None] = mapped_column(String(20))
     fallback_agent_id: Mapped[str | None] = mapped_column(Uuid(as_uuid=False))

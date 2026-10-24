@@ -52,14 +52,17 @@ test("Windows terminal: real output, resize, reconnect, audit and maintainer aut
     .click();
   await page.getByRole("button", { name: "Terminal", exact: true }).click();
   const terminal = page.getByRole("region", { name: "Remote terminal" });
-  await expect(terminal.getByRole("status")).toHaveText("Đã kết nối");
+  await expect(terminal.getByTestId("remote-terminal")).toHaveAttribute(
+    "data-connected",
+    "true",
+  );
   const id = await page
     .getByTestId("remote-terminal")
     .getAttribute("data-session-id");
   expect(id).toBeTruthy();
-  await terminal
-    .getByRole("button", { name: "git status", exact: true })
-    .click();
+  await terminal.locator(".xterm-helper-textarea").focus();
+  await page.keyboard.type("git status");
+  await page.keyboard.press("Enter");
   await expect
     .poll(() =>
       page.evaluate(() =>
@@ -71,9 +74,12 @@ test("Windows terminal: real output, resize, reconnect, audit and maintainer aut
     .toContain("On branch develop");
   await page.setViewportSize({ width: 1100, height: 800 });
   await terminal
-    .getByRole("button", { name: "Kết nối lại", exact: true })
+    .getByRole("button", { name: "Kết nối lại terminal", exact: true })
     .click();
-  await expect(terminal.getByRole("status")).toHaveText("Đã kết nối");
+  await expect(terminal.getByTestId("remote-terminal")).toHaveAttribute(
+    "data-connected",
+    "true",
+  );
   await expect(page.getByTestId("remote-terminal")).toHaveAttribute(
     "data-session-id",
     id!,

@@ -11,6 +11,7 @@ from collections import deque
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 
+from app.acp.config_options import choices, describe, selector, split_model
 from app.acp.guard import DynamicPermissionGuard
 from app.acp.handlers import ClientRequestHandlers
 from app.acp.jsonrpc import ACPProcessExited, JsonRpcConnection, RPCError
@@ -81,6 +82,7 @@ class ACPSession:
         self.model_effective: str | None = None
         self.runtime_version: str | None = None
         self.available_models: list[Json] = []
+        self.config_options: list[Json] = []
         self.agent_capabilities: Json = {}
         self.modified_files: set[str] = set()
         self.turn_interrupted = False
@@ -184,42 +186,80 @@ class ACPSession:
             desired = "default" if self.cfg.runtime == "claude-code" else "read-only"
             if desired in modes:
                 await self.rpc.request("session/set_mode", {"sessionId": self.session_id, "modeId": desired})
-            config: Json = next(
-                (item for item in session.get("configOptions", []) if item.get("id") == "model"), {}
-            )
+            self.config_options = session.get("configOptions", [])
+            config = selector(self.config_options, "model")
             self.model_effective = session.get("models", {}).get("currentModelId") or config.get(
                 "currentValue"
             )
-            self.available_models = session.get("models", {}).get("availableModels", []) or config.get(
-                "options", []
+            self.available_models = choices(config.get("options", [])) or session.get("models", {}).get(
+                "availableModels", []
             )
-            if self.cfg.model:
-                try:
-                    if config and self.cfg.runtime == "claude-code":
-                        await self.rpc.request(
-                            "session/set_config_option",
-                            {
-                                "sessionId": self.session_id,
-                                "configId": "model",
-                                "value": self.cfg.model,
-                            },
-                        )
-                    else:
-                        await self.rpc.request(
-                            "session/set_model",
-                            {
-                                "sessionId": self.session_id,
-                                "modelId": self.cfg.model,
-                            },
-                        )
-                    self.model_effective = self.cfg.model
-                except (RPCError, TimeoutError):
-                    logger.warning(
-                        "Model selection unavailable for agent=%s; retaining adapter default", self.cfg.handle
+            requested_model, requested_effort = self.cfg.model, self.cfg.reasoning_effort
+            if config and requested_model:
+                base, level = split_model(requested_model)
+                if level and base in {item.get("value") for item in choices(config.get("options", []))}:
+                    requested_model, requested_effort = base, requested_effort or level
+            if requested_model:
+                selected = requested_model
+                if not selector(self.config_options, "thought_level"):
+                    legacy_ids = [item.get("value") or item.get("modelId") for item in self.available_models]
+                    if requested_effort:
+                        combined = f"{split_model(selected)[0]}[{requested_effort}]"
+                        if combined in legacy_ids:
+                            selected = combined
+                    if selected not in legacy_ids:
+                        candidates = [
+                            item
+                            for item in legacy_ids
+                            if isinstance(item, str) and split_model(item)[0] == selected
+                        ]
+                        if candidates:
+                            selected = (
+                                self.model_effective if self.model_effective in candidates else candidates[0]
+                            )
+                if config:
+                    await self.set_config(config, selected)
+                else:
+                    await self.rpc.request(
+                        "session/set_model",
+                        {
+                            "sessionId": self.session_id,
+                            "modelId": selected,
+                        },
                     )
+                self.model_effective = selected
+            if requested_effort:
+                effort = selector(self.config_options, "thought_level")
+                if effort:
+                    await self.set_config(effort, requested_effort)
+                elif split_model(self.model_effective or "")[1] != requested_effort:
+                    raise ValueError("ACP does not advertise reasoning selection")
         except BaseException:
             await self.close()
             raise
+
+    async def set_config(self, option: Json, value: str) -> None:
+        assert self.rpc
+        available = choices(option.get("options", []))
+        if available and value not in {item.get("value") for item in available}:
+            raise ValueError("Value not advertised by ACP")
+        response = await self.rpc.request(
+            "session/set_config_option",
+            {
+                "sessionId": self.session_id,
+                "configId": option["id"],
+                "value": value,
+            },
+        )
+        if "configOptions" in response:
+            self.config_options = response["configOptions"]
+
+    def model_options(self) -> Json:
+        return {
+            **describe(self.config_options, self.available_models),
+            "current_model": self.model_effective,
+            "source": "acp",
+        }
 
     async def _emit(self, event: ACPStreamEvent) -> None:
         safe = ACPStreamEvent.model_validate(scrub_data(event.model_dump(), self._scrub_cfg))
@@ -249,10 +289,15 @@ class ACPSession:
         logger.debug("ACP stderr agent=%s %s", self.cfg.handle, safe)
 
     async def _notification(self, method: str, params: Json) -> None:
-        if method != "session/update" or not self.busy or params.get("sessionId") != self.session_id:
+        if method != "session/update" or params.get("sessionId") != self.session_id:
             return
         update = params.get("update", {})
         kind = update.get("sessionUpdate")
+        if kind == "config_option_update":
+            self.config_options = update.get("configOptions", [])
+            return
+        if not self.busy:
+            return
         mapping: dict[str, ACPEventType] = {
             "agent_message_chunk": "message_chunk",
             "agent_thought_chunk": "thought_chunk",

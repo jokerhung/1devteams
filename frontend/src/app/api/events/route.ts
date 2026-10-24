@@ -49,7 +49,8 @@ export async function GET(request: Request) {
           try {
             if (JSON.parse(data.toString()).type === "ping") {
               socket.send(JSON.stringify({ type: "pong" }));
-              return;
+              // Terminal clients use backend pings to detect a stalled PTY connection.
+              if (!channel.startsWith("terminal/")) return;
             }
           } catch {
             return;

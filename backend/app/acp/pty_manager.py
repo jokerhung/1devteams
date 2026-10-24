@@ -14,6 +14,10 @@ from uuid import uuid4
 from app.services.audit import terminal_audit
 
 
+class TerminalBusyError(ValueError):
+    """The previous attachment may still be disconnecting."""
+
+
 def spawn(workspace: Path, rows: int, cols: int) -> Any:
     # Never inherit server/provider secrets into an interactive shell.
     safe = {
@@ -67,6 +71,7 @@ class Session:
     detached_at: float = field(default_factory=time.monotonic)
     reader: asyncio.Task[None] | None = None
     closed: asyncio.Event = field(default_factory=asyncio.Event)
+    detached: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 class PTYManager:
@@ -77,6 +82,15 @@ class PTYManager:
         self.reaper: asyncio.Task[None] | None = None
 
     async def attach(self, uid: str, pid: str, workspace: Path, rows: int, cols: int) -> Session:
+        # A reconnect may reach us before the previous WebSocket finishes closing.
+        old = self.sessions.get((uid, pid))
+        if old and old.attached:
+            try:
+                await asyncio.wait_for(old.detached.wait(), timeout=1.5)
+            except TimeoutError:
+                raise TerminalBusyError(
+                    "Terminal đang mở ở tab khác; hãy đóng terminal ở tab đó trước"
+                ) from None
         async with self.lock:
             key = (uid, pid)
             old = self.sessions.get(key)
@@ -84,7 +98,7 @@ class PTYManager:
                 await self._close(key)
                 old = None
             if old and old.attached:
-                raise ValueError("Terminal đang mở ở tab khác")
+                raise TerminalBusyError("Terminal đang mở ở tab khác")
             if old is None:
                 if len(self.sessions) >= self.settings.max_terminal_sessions:
                     raise ValueError("Đã đạt giới hạn terminal")
@@ -95,6 +109,7 @@ class PTYManager:
                 await terminal_audit(self.db, uid, pid, "open")
             old.initial_replay = old.replay
             old.attached = True
+            old.detached.clear()
             while not old.queue.empty():
                 old.queue.get_nowait()
             if not self.reaper:
@@ -114,7 +129,11 @@ class PTYManager:
                         while not session.queue.empty():
                             session.queue.get_nowait()
                         session.queue.put_nowait(
-                            {"type": "error", "data": "Terminal output quá nhanh; kết nối lại"}
+                            {
+                                "type": "error",
+                                "data": "Terminal output quá nhanh; kết nối lại",
+                                "retryable": True,
+                            }
                         )
                     else:
                         session.queue.put_nowait({"type": "output", "data": data})
@@ -126,6 +145,7 @@ class PTYManager:
 
     async def detach(self, session: Session) -> None:
         session.attached, session.detached_at = False, time.monotonic()
+        session.detached.set()
 
     async def reap(self) -> None:
         while True:
@@ -147,6 +167,7 @@ class PTYManager:
         await terminal_audit(self.db, session.user_id, session.project_id, "close")
         self.sessions.pop(key, None)
         session.closed.set()
+        session.detached.set()
 
     async def close(self) -> None:
         if self.reaper:

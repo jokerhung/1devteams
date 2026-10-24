@@ -41,6 +41,36 @@ async def collect(session, text="Go"):
     return [event async for event in session.prompt(text)]
 
 
+@pytest.mark.parametrize("format", [None, "reasoning_effort", "reasoning"])
+async def test_reasoning_request_payload(api_cfg, tmp_path, format):
+    api_cfg.reasoning_effort = "high"
+    api_cfg.api_params.reasoning_format = format
+    session = make_api(api_cfg, tmp_path)
+    try:
+        await session.start()
+        await collect(session)
+        body = requests[-1]
+        assert "reasoning_format" not in body
+        if format == "reasoning":
+            assert body["reasoning"] == {"effort": "high"}
+            assert "reasoning_effort" not in body
+        else:
+            assert body["reasoning_effort"] == "high"
+            assert "reasoning" not in body
+    finally:
+        await session.close()
+
+
+async def test_default_omits_reasoning(api_cfg, tmp_path):
+    session = make_api(api_cfg, tmp_path)
+    try:
+        await session.start()
+        await collect(session)
+        assert "reasoning" not in requests[-1] and "reasoning_effort" not in requests[-1]
+    finally:
+        await session.close()
+
+
 @pytest.mark.parametrize("model", ["test-model", "length"])
 async def test_stream(api_cfg, tmp_path, model):
     api_cfg.model = model

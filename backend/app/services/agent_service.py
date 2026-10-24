@@ -217,6 +217,7 @@ def runtime_config(agent: Agent, settings) -> AgentRuntimeConfig:
         handle=agent.handle,
         runtime=agent.runtime,
         model=agent.model,
+        reasoning_effort=agent.reasoning_effort,
         fallback_model=agent.fallback_model,
         fallback_runtime=agent.fallback_runtime,
         fallback_agent_id=agent.fallback_agent_id,

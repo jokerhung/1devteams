@@ -19,7 +19,7 @@ from app.engine.context import RunContext
 from app.engine.prompts import user_identity
 from app.schemas.workflow import Graph
 from app.services.agent_service import runtime_config
-from app.services.git_service import GitService
+from app.services.git_service import GitService, safe_release_path
 from app.services.notification_service import resolve_gate
 from app.services.project_service import effective_agents
 
@@ -140,6 +140,23 @@ class TicketRunner:
             ).all()
         for ticket in rows:
             try:
+                if ticket.status == "RUNNING" and ticket.current_node_id == "manual_release":
+                    async with self.sessions() as db:
+                        project = await db.get(Project, ticket.project_id)
+                    ctx = self.context(ticket, project)
+                    await ctx.status(
+                        "FAILED",
+                        "manual_release",
+                        {
+                            "error": "Server restart; bấm Commit toàn bộ & đóng ticket để tiếp tục.",
+                            **(
+                                {"pending_release": ticket.result["pending_release"]}
+                                if ticket.result.get("pending_release")
+                                else {}
+                            ),
+                        },
+                    )
+                    continue
                 if ticket.result.get("adhoc_writer") and ticket.status in {"OPEN", "FAILED"}:
                     async with self.sessions() as db:
                         project = await db.get(Project, ticket.project_id)
@@ -154,7 +171,18 @@ class TicketRunner:
                 checkpoint = await graph.aget_state(self.config(ticket.id, ctx))
                 if ticket.status == "RUNNING":
                     await self.checkpoint_error(graph, ctx, "server restart")
-                    await ctx.status("FAILED", ticket.current_node_id, {"error": "server restart"})
+                    await ctx.status(
+                        "FAILED",
+                        ticket.current_node_id,
+                        {
+                            "error": "server restart",
+                            **(
+                                {"pending_release": ticket.result["pending_release"]}
+                                if ticket.result.get("pending_release")
+                                else {}
+                            ),
+                        },
+                    )
                     await ctx.emit("error", "server restart — dùng retry để tiếp tục checkpoint")
                 elif ticket.status == "WAITING_USER_CONFIRM" or checkpoint.values.get("wrote_files"):
                     key = os.path.normcase(str(ctx.git.workspace.resolve()))
@@ -448,6 +476,127 @@ class TicketRunner:
                 fail(409, "Không có checkpoint để retry", "missing_checkpoint")
             await graph.aupdate_state(self.config(tid, ctx), {"error": None})
             self.schedule(tid, graph, ctx, None)
+
+    async def force_release(self, tid: str, user: Any) -> None:
+        """Explicit maintainer action; bypass the LLM review and human gates."""
+        async with self.action_locks.setdefault(tid, asyncio.Lock()):
+            ticket = await self.authorize(tid, user, confirm=True)
+            if ticket.status == "COMPLETED":
+                return
+            if self.closed:
+                fail(503, "Runner đang dừng", "runner_closed")
+            if ticket.result.get("force_release_running") and tid in self.tasks:
+                return
+            if ticket.status == "CANCELLED":
+                fail(409, "Ticket đã bị huỷ", "invalid_ticket_status")
+            for task in (self.adhoc_tasks.get(tid), self.tasks.get(tid)):
+                if task:
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+            await self.pool.close_ticket(tid)
+            async with self.sessions() as db:
+                project = await db.get(Project, ticket.project_id)
+            ctx = self.context(ticket, project)
+            # Use current project settings even if an older run cached its context.
+            workspace = await asyncio.to_thread(Path(project.workspace_path).resolve)
+            if tid in self.owned and ctx.git.workspace != workspace:
+                self.release(tid)
+            ctx.git.workspace = workspace
+            ctx.remote = project.git_remote
+            ctx.run_id = None
+            ctx.node_id = "manual_release"
+            result = {**ticket.result, "force_release_running": True}
+            await ctx.status("RUNNING", "manual_release", result)
+            self.tasks[tid] = asyncio.create_task(
+                self.execute_force_release(ticket, ctx, user_identity(user)["id"])
+            )
+
+    async def execute_force_release(self, ticket: Ticket, ctx: RunContext, actor_id: str) -> None:
+        from app.services.audit import audit
+
+        tid = ticket.id
+        pending = ticket.result.get("pending_release")
+
+        async def remember(result: dict[str, Any]) -> None:
+            nonlocal pending
+            pending = {**result, "remote": ctx.remote}
+            await ctx.status(
+                "RUNNING",
+                "manual_release",
+                {
+                    "force_release_running": True,
+                    "pending_release": pending,
+                },
+            )
+
+        try:
+            await self.acquire(tid, ctx)
+            await ctx.emit(
+                "log",
+                "Đang commit toàn bộ code và push theo yêu cầu người dùng.",
+                sender_type="AGENT",
+                sender_name="@leader",
+            )
+            async with self.sessions() as db:
+                await audit(db, "git.force_release_requested", tid, user_id=actor_id)
+                await db.commit()
+            await ctx.git.exclude_attachments()
+            snapshot = await ctx.git.snapshot()
+            files = [name for name in snapshot["files"] if safe_release_path(name)]
+            if files:
+                result = await ctx.git.commit_and_push(
+                    files,
+                    f"fix: ticket #{ticket.number} {ticket.title}",
+                    remote=ctx.remote,
+                    branch=snapshot["branch"],
+                    on_commit=remember,
+                )
+            elif pending:
+                if pending.get("remote") != ctx.remote:
+                    raise ValueError("Remote changed since the pending release")
+                result = await ctx.git.push_existing(pending, remote=ctx.remote)
+            else:
+                # A clean tree still needs a successful push before completion.
+                full = (await ctx.git.run("rev-parse", "HEAD")).strip()
+                result = {
+                    "commit_hash": full[:7],
+                    "commit_hash_full": full,
+                    "branch": snapshot["branch"],
+                    "files": [],
+                    "message": "No source changes",
+                    "insertions": 0,
+                    "deletions": 0,
+                }
+                await remember(result)
+                result = await ctx.git.push_existing(result, remote=ctx.remote)
+            result = {**result, "forced_by": actor_id}
+            async with self.sessions() as db:
+                await audit(db, "git.force_release", tid, user_id=actor_id, payload=result)
+                await resolve_gate(db, tid, "APPROVED", events=self.events)
+                await db.commit()
+            await ctx.status("COMPLETED", "manual_release", result)
+            await ctx.emit(
+                "log",
+                f"Đã push commit {result['commit_hash']} và đóng ticket.",
+                sender_type="AGENT",
+                sender_name="@leader",
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            reason = "Commit/push thất bại; ticket chưa đóng. Xem log Git và bấm lại để thử lại."
+            await ctx.status(
+                "FAILED",
+                "manual_release",
+                {
+                    "error": reason,
+                    **({"pending_release": pending} if pending else {}),
+                },
+            )
+            await ctx.emit("error", reason)
+        finally:
+            self.release(tid)
+            self.tasks.pop(tid, None)
 
     async def cancel(self, tid: str, user: Any) -> None:
         async with self.action_locks.setdefault(tid, asyncio.Lock()):

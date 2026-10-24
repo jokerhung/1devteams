@@ -1,10 +1,12 @@
 import asyncio
+import logging
 from contextlib import suppress
 from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
+from app.acp.pty_manager import TerminalBusyError
 from app.core.deps import require_project
 from app.core.security import token_subject
 from app.db.models import User
@@ -12,6 +14,7 @@ from app.services.audit import terminal_audit
 from app.ws.ticket_ws import authenticate
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.websocket("/ws/terminal/{project_id}")
@@ -72,10 +75,25 @@ async def terminal_socket(socket: WebSocket, project_id: UUID):
                 receive = asyncio.create_task(socket.receive_json())
     except WebSocketDisconnect:
         pass
-    except (ValueError, HTTPException, TimeoutError, KeyError, TypeError, OSError):
+    except (ValueError, HTTPException, TimeoutError, KeyError, TypeError, OSError) as error:
+        if isinstance(error, HTTPException):
+            reason = (
+                "Bạn cần quyền MAINTAINER để mở terminal"
+                if error.status_code == 403
+                else "Không xác thực được phiên terminal; hãy đăng nhập lại"
+            )
+        elif isinstance(error, ValueError):
+            reason = str(error)
+        else:
+            reason = "Không thể mở phiên terminal; hãy kết nối lại"
+        logger.warning("Terminal connection rejected: %s (%s)", reason, type(error).__name__)
         with suppress(WebSocketDisconnect, RuntimeError):
             await socket.send_json(
-                {"type": "error", "data": "Terminal bị từ chối: kiểm tra quyền MAINTAINER và cấu hình"}
+                {
+                    "type": "error",
+                    "data": reason,
+                    "retryable": isinstance(error, (TimeoutError, OSError, TerminalBusyError)),
+                }
             )
             await socket.close(1008)
     finally:

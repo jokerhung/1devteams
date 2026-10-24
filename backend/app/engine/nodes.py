@@ -471,7 +471,9 @@ async def agent_turn(
                     runtime = primary.fallback_runtime or primary.runtime
                     if runtime == "openai-api" and primary.runtime != "openai-api":
                         raise ValueError("API fallback cần agent credential riêng") from error
-                    cfg = primary.model_copy(update={"model": primary.fallback_model, "runtime": runtime})
+                    cfg = primary.model_copy(
+                        update={"model": primary.fallback_model, "runtime": runtime, "reasoning_effort": None}
+                    )
                 fallback = True
                 await ctx.emit(
                     "log",

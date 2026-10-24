@@ -12,6 +12,7 @@ export function ChannelHeader({
   status,
   memberCount,
   canReport,
+  canRelease,
   onDrawer,
   terminalOpen,
   onTerminal,
@@ -23,12 +24,14 @@ export function ChannelHeader({
   status: string;
   memberCount: number;
   canReport: boolean;
+  canRelease: boolean;
   onDrawer: () => void;
   terminalOpen: boolean;
   onTerminal: () => void;
-  onAction: (action: "cancel" | "retry") => Promise<void>;
+  onAction: (action: "cancel" | "retry" | "force-release") => Promise<void>;
 }) {
   const [cancel, setCancel] = useState(false);
+  const [releasing, setReleasing] = useState(false);
   return (
     <header className="shrink-0 border-b border-stone-200 px-5 py-3">
       <nav className="mb-1 text-[11px] text-stone-400">
@@ -80,7 +83,7 @@ export function ChannelHeader({
             >
               ⋯
             </summary>
-            <div className="absolute right-0 z-20 w-44 rounded-lg border border-stone-200 bg-white p-2 shadow-lg">
+            <div className="absolute right-0 z-20 w-64 rounded-lg border border-stone-200 bg-white p-2 shadow-lg">
               <button
                 className="side-item w-full text-xs"
                 onClick={async () => {
@@ -94,6 +97,37 @@ export function ChannelHeader({
               >
                 Sao chép link
               </button>
+              {canRelease && !["CANCELLED", "COMPLETED"].includes(status) && (
+                <button
+                  className="side-item w-full text-xs"
+                  disabled={
+                    releasing ||
+                    (status === "RUNNING" &&
+                      !!ticket.result.force_release_running)
+                  }
+                  title="Dừng agent, commit toàn bộ code và push nhánh hiện tại, sau đó đóng ticket"
+                  onClick={async () => {
+                    setReleasing(true);
+                    try {
+                      await onAction("force-release");
+                      toast.success("Đang commit, push và đóng ticket");
+                    } catch (error) {
+                      toast.error(
+                        error instanceof Error
+                          ? error.message
+                          : "Không thể commit",
+                      );
+                    } finally {
+                      setReleasing(false);
+                    }
+                  }}
+                >
+                  {releasing ||
+                  (status === "RUNNING" && ticket.result.force_release_running)
+                    ? "Đang commit & đóng ticket…"
+                    : "Commit toàn bộ & đóng ticket"}
+                </button>
+              )}
               {canReport && status === "FAILED" && (
                 <button
                   className="side-item w-full text-xs"

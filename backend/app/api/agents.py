@@ -12,8 +12,10 @@ from app.schemas.agent import (
     AgentEditOut,
     AgentOut,
     AgentPatch,
+    APIOptionsDraft,
     ConnectionDraft,
     ConnectionOut,
+    NativeOptionsDraft,
 )
 from app.schemas.common import Success
 from app.services import connections
@@ -40,6 +42,33 @@ async def models_catalog(request: Request, user: CurrentUser) -> dict:
 @router.get("/permission-presets")
 async def presets(user: CurrentUser) -> dict:
     return PRESETS
+
+
+@router.post("/native-options")
+async def native_options(body: NativeOptionsDraft, request: Request, user: Admin) -> dict:
+    request.app.state.connection_limiter.check(user.id)
+    return await connections.native_options(
+        body.runtime, body.model, request.app.state.settings, body.reasoning_effort
+    )
+
+
+@router.post("/api-options", response_model=ConnectionOut)
+async def api_options(body: APIOptionsDraft, request: Request, db: DB, user: Admin):
+    request.app.state.connection_limiter.check(user.id)
+    key = body.api_key
+    headers = {}
+    if body.agent_id:
+        agent = await record(db, Agent, body.agent_id)
+        if body.base_url.rstrip("/") == (agent.base_url or "").rstrip("/"):
+            cfg = runtime_config(agent, request.app.state.settings)
+            key = key or cfg.api_key
+            headers = cfg.api_params.extra_headers
+        elif not key:
+            fail(422, "Nhập API key cho Base URL mới", "credentials_required")
+    if not key:
+        fail(422, "Nhập API key để tải model", "credentials_required")
+    draft = ConnectionDraft(base_url=body.base_url, api_key=key, model="discovery", extra_headers=headers)
+    return await connections.test_api(draft, request.app.state.settings, models_only=True)
 
 
 @router.post("/test-connection-draft", response_model=ConnectionOut)

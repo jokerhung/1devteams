@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { apiFetch, send } from "@/lib/api";
@@ -7,6 +7,19 @@ import type { Agent, Team, Connection, Permission } from "@/lib/types";
 import { LogoPicker, Modal, colors, TagInput } from "./primitives";
 type Preset = "read_only" | "developer" | "tester" | "leader" | "custom";
 type Runtime = Agent["runtime"];
+type NativeOptions = {
+  models: {
+    id: string;
+    label: string;
+    reasoning_levels: { id: string; label: string }[];
+  }[];
+  reasoning_levels: { id: string; label: string }[];
+};
+type APIModel = {
+  id: string;
+  reasoning_levels?: { id: string; label: string }[];
+  supports_reasoning?: boolean | null;
+};
 const readOnly: Permission = {
   allow_read: true,
   allow_write: false,
@@ -34,7 +47,14 @@ export function AgentForm({
   const [runtime, setRuntime] = useState<Runtime>(
     agent?.runtime || "claude-code",
   );
-  const [model, setModel] = useState(agent?.model || "");
+  const legacyModel =
+    agent?.runtime !== "openai-api"
+      ? agent?.model?.match(/^(.+)\[([^\[\]]+)\]$/)
+      : null;
+  const [model, setModel] = useState(legacyModel?.[1] || agent?.model || "");
+  const [reasoning, setReasoning] = useState(
+    agent?.reasoning_effort || legacyModel?.[2] || "",
+  );
   const [fallbackModel, setFallbackModel] = useState(
     agent?.fallback_model || "",
   );
@@ -63,13 +83,31 @@ export function AgentForm({
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
   const [connection, setConnection] = useState<Connection | null>(null);
+  const [apiModels, setApiModels] = useState<APIModel[]>([]);
+  const apiModelRequest = useRef(0);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelsError, setModelsError] = useState("");
+  const [reasoningFormat, setReasoningFormat] = useState(
+    (agent?.api_params?.reasoning_format as string) || "auto",
+  );
+  const apiModel = apiModels.find((item) => item.id === model);
+  const apiLevels = apiModel?.reasoning_levels?.length
+    ? apiModel.reasoning_levels
+    : ["none", "minimal", "low", "medium", "high", "xhigh", "max"].map(
+        (id) => ({ id, label: id }),
+      );
   const [error, setError] = useState("");
-  const catalog = useQuery({
-    queryKey: ["model-catalog"],
+  const nativeOptions = useQuery({
+    queryKey: ["native-options", runtime, model],
     queryFn: () =>
-      apiFetch<Record<string, { id: string; label: string }[]>>(
-        "/agents/models-catalog",
-      ),
+      send<NativeOptions>("/agents/native-options", {
+        runtime,
+        model: model || null,
+      }),
+    enabled: runtime !== "openai-api",
+    staleTime: 300_000,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
   const presets = useQuery({
     queryKey: ["permission-presets"],
@@ -84,7 +122,10 @@ export function AgentForm({
       ),
     enabled: !!agent,
   });
-  const nativeModels = catalog.data?.[runtime] || [];
+  const nativeModels = nativeOptions.data?.models || [];
+  const reasoningLevels = nativeOptions.data?.reasoning_levels.length
+    ? nativeOptions.data.reasoning_levels
+    : nativeModels.find((item) => item.id === model)?.reasoning_levels || [];
   const validHandle = /^@[a-z0-9_\-]{2,49}$/.test(handle);
   const custom = runtime === "openai-api";
   let validUrl = true;
@@ -99,6 +140,27 @@ export function AgentForm({
     if (value !== "custom" && presets.data?.[value])
       setPermission(presets.data[value]);
     else if (value === "read_only") setPermission(readOnly);
+  }
+  async function loadApiModels() {
+    const request = ++apiModelRequest.current;
+    setLoadingModels(true);
+    setModelsError("");
+    try {
+      const result = await send<Connection>("/agents/api-options", {
+        base_url: baseUrl.replace(/\/$/, ""),
+        ...(apiKey ? { api_key: apiKey } : {}),
+        ...(persisted ? { agent_id: persisted.id } : {}),
+      });
+      if (!result.ok)
+        throw new Error(result.error || "Không tải được danh sách model");
+      if (request === apiModelRequest.current)
+        setApiModels(result.models as APIModel[]);
+    } catch (error) {
+      if (request === apiModelRequest.current)
+        setModelsError((error as Error).message);
+    } finally {
+      setLoadingModels(false);
+    }
   }
   async function testConnection() {
     setTesting(true);
@@ -126,11 +188,19 @@ export function AgentForm({
             model,
           }),
         );
-      } else if (agent)
-        setConnection(
-          await send<Connection>(`/agents/${agent.id}/test-connection`),
-        );
-      else throw new Error("Lưu agent trước khi kiểm tra kết nối CLI.");
+      } else {
+        const started = Date.now();
+        const result = await send<NativeOptions>("/agents/native-options", {
+          runtime,
+          model: model || null,
+          reasoning_effort: reasoning || null,
+        });
+        setConnection({
+          ok: true,
+          models: result.models,
+          latency_ms: Date.now() - started,
+        });
+      }
     } catch (e) {
       setConnection({ ok: false, error: (e as Error).message, latency_ms: 0 });
     } finally {
@@ -189,6 +259,19 @@ export function AgentForm({
               description,
               runtime,
               model: model || null,
+              reasoning_effort:
+                custom && apiModel?.supports_reasoning === false
+                  ? null
+                  : reasoning || null,
+              ...(custom
+                ? {
+                    api_params: {
+                      ...persisted?.api_params,
+                      reasoning_format:
+                        reasoningFormat === "auto" ? null : reasoningFormat,
+                    },
+                  }
+                : {}),
               fallback_model: fallbackModel || null,
               fallback_runtime: fallbackRuntime || null,
               fallback_agent_id: fallbackAgent || null,
@@ -327,6 +410,7 @@ export function AgentForm({
               const value = e.target.value as Runtime;
               setRuntime(value);
               setModel("");
+              setReasoning("");
               setConnection(null);
               if (value === "openai-api") {
                 setPreset("read_only");
@@ -377,7 +461,12 @@ export function AgentForm({
                 className="font-mono"
                 value={baseUrl}
                 placeholder="https://api.openai.com/v1"
-                onChange={(e) => setBaseUrl(e.target.value)}
+                onChange={(e) => {
+                  setBaseUrl(e.target.value);
+                  apiModelRequest.current++;
+                  setApiModels([]);
+                  setModelsError("");
+                }}
                 onBlur={() => setBaseUrl(baseUrl.replace(/\/$/, ""))}
                 required
               />
@@ -393,7 +482,12 @@ export function AgentForm({
                 type="password"
                 autoComplete="off"
                 value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
+                onChange={(e) => {
+                  setApiKey(e.target.value);
+                  apiModelRequest.current++;
+                  setApiModels([]);
+                  setModelsError("");
+                }}
                 placeholder={
                   agent?.has_key
                     ? "•••••••• (để trống = giữ nguyên)"
@@ -411,15 +505,16 @@ export function AgentForm({
                 required
                 list="api-models"
                 value={model}
-                onChange={(e) => setModel(e.target.value)}
+                aria-label="Model API nhập tay"
+                onChange={(e) => {
+                  setModel(e.target.value);
+                  setReasoning("");
+                }}
               />
               <datalist id="api-models">
                 {Array.from(
                   new Set([
-                    "gpt-5",
-                    "gpt-5-mini",
-                    "gpt-4.1",
-                    ...(connection?.models || []).map((m) =>
+                    ...apiModels.map((m) =>
                       String((m as { id?: string }).id || ""),
                     ),
                   ]),
@@ -432,6 +527,76 @@ export function AgentForm({
             </label>
             <button
               type="button"
+              className="btn btn-light"
+              disabled={loadingModels || !validUrl || !baseUrl}
+              onClick={() => void loadApiModels()}
+            >
+              {loadingModels ? "Đang tải model…" : "Tải model từ API"}
+            </button>
+            {modelsError && <p className="error">{modelsError}</p>}
+            {!!apiModels.length && (
+              <label className="field">
+                Model từ API
+                <select
+                  aria-label="Model API"
+                  value={model}
+                  onChange={(e) => {
+                    setModel(e.target.value);
+                    setReasoning("");
+                  }}
+                >
+                  <option value="">Chọn model</option>
+                  {model && !apiModel && <option value={model}>{model}</option>}
+                  {apiModels.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label className="field">
+              Reasoning (mức suy luận API)
+              <select
+                aria-label="Reasoning API"
+                value={reasoning}
+                disabled={apiModel?.supports_reasoning === false}
+                onChange={(e) => setReasoning(e.target.value)}
+              >
+                <option value="">Mặc định API (không gửi tham số)</option>
+                {reasoning &&
+                  !apiLevels.some((item) => item.id === reasoning) && (
+                    <option value={reasoning}>{reasoning} (đã lưu)</option>
+                  )}
+                {apiLevels.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="text-xs text-sky-700">
+              {apiModel?.supports_reasoning === false
+                ? "API công bố model này không hỗ trợ reasoning."
+                : apiModel?.reasoning_levels?.length
+                  ? "Các mức reasoning được tải từ API."
+                  : "API chưa công bố các mức reasoning; chọn thủ công theo tài liệu nhà cung cấp."}
+            </p>
+            <label className="field">
+              Định dạng reasoning
+              <select
+                value={reasoningFormat}
+                onChange={(e) => setReasoningFormat(e.target.value)}
+              >
+                <option value="auto">Tự động theo URL API</option>
+                <option value="reasoning_effort">
+                  reasoning_effort (OpenAI Chat Completions)
+                </option>
+                <option value="reasoning">reasoning.effort (OpenRouter)</option>
+              </select>
+            </label>
+            <button
+              type="button"
               disabled={testing}
               onClick={testConnection}
               className="btn btn-light"
@@ -440,24 +605,70 @@ export function AgentForm({
             </button>
           </div>
         ) : (
-          <label className="field">
-            Model
-            <select
-              aria-label="Model ACP"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-            >
-              <option value="">Mặc định runtime</option>
-              {model && !nativeModels.some((m) => m.id === model) && (
-                <option value={model}>{model}</option>
-              )}
-              {nativeModels.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="space-y-3">
+            <label className="field">
+              Model
+              <select
+                aria-label="Model ACP"
+                value={model}
+                onChange={(e) => {
+                  setModel(e.target.value);
+                  setReasoning("");
+                }}
+              >
+                <option value="">Mặc định runtime</option>
+                {model && !nativeModels.some((m) => m.id === model) && (
+                  <option value={model}>{model}</option>
+                )}
+                {nativeModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              Reasoning (mức suy luận ACP)
+              <select
+                aria-label="Reasoning ACP"
+                value={reasoning}
+                disabled={
+                  !model || nativeOptions.isFetching || !reasoningLevels.length
+                }
+                onChange={(e) => setReasoning(e.target.value)}
+              >
+                <option value="">Mặc định runtime</option>
+                {reasoning &&
+                  !reasoningLevels.some((item) => item.id === reasoning) && (
+                    <option value={reasoning}>{reasoning} (đã lưu)</option>
+                  )}
+                {reasoningLevels.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="flex items-center gap-2 text-xs text-stone-500">
+              <button
+                type="button"
+                className="btn btn-light"
+                disabled={nativeOptions.isFetching}
+                onClick={() => void nativeOptions.refetch()}
+              >
+                {nativeOptions.isFetching
+                  ? "Đang tải từ ACP…"
+                  : "Tải lại model từ ACP"}
+              </button>
+              {!nativeOptions.isFetching &&
+                !nativeOptions.error &&
+                !reasoningLevels.length &&
+                "ACP chưa cung cấp mức reasoning cho model này."}
+            </div>
+            {nativeOptions.error && (
+              <p className="error">{nativeOptions.error.message}</p>
+            )}
+          </div>
         )}
         <details className="rounded border border-stone-200 p-3 text-sm">
           <summary className="cursor-pointer">
@@ -609,7 +820,7 @@ export function AgentForm({
             {!custom && (
               <button
                 type="button"
-                disabled={testing || !agent}
+                disabled={testing || nativeOptions.isFetching}
                 className="btn btn-light"
                 onClick={testConnection}
               >
@@ -627,7 +838,10 @@ export function AgentForm({
           <button type="button" className="btn btn-light" onClick={onClose}>
             Huỷ
           </button>
-          <button disabled={busy} className="btn btn-dark">
+          <button
+            disabled={busy || (!custom && nativeOptions.isFetching)}
+            className="btn btn-dark"
+          >
             {busy ? "Đang lưu…" : agent ? "Lưu & khởi động lại" : "Lưu Agent"}
           </button>
         </div>

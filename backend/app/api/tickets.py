@@ -327,6 +327,12 @@ async def retry_ticket(tid: UUID, request: Request, user: CurrentUser):
     return {"accepted": True}
 
 
+@router.post("/tickets/{tid}/force-release", status_code=202)
+async def force_release_ticket(tid: UUID, request: Request, user: CurrentUser):
+    await request.app.state.ticket_runner.force_release(str(tid), user)
+    return {"accepted": True}
+
+
 @router.get("/tickets/{tid}/state")
 async def ticket_state(tid: UUID, request: Request, db: DB, user: CurrentUser):
     await authorized_ticket(db, tid, user)

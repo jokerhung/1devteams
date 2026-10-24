@@ -114,3 +114,68 @@ async def test_api_params_keep_encrypted_headers_and_missing_cipher(client):
     client.app.state.settings.app_secret_key = None
     result = await client.post("/api/agents", json=PAYLOAD | {"handle": "@no_cipher"})
     assert result.status_code == 503 and PAYLOAD["api_key"] not in result.text
+
+
+async def test_api_options_use_saved_key_for_unsaved_model_config(client, monkeypatch):
+    from app.services import connections
+
+    aid = (await client.post("/api/agents", json=PAYLOAD)).json()["id"]
+
+    async def fake(body, settings, *, models_only):
+        assert models_only
+        assert body.api_key.get_secret_value() == PAYLOAD["api_key"]
+        assert body.extra_headers["api-key"].get_secret_value() == "extra-secret"
+        return {"ok": True, "latency_ms": 1, "models": [{"id": "new-model"}]}
+
+    monkeypatch.setattr(connections, "test_api", fake)
+    response = await client.post(
+        "/api/agents/api-options", json={"agent_id": aid, "base_url": PAYLOAD["base_url"]}
+    )
+    assert response.status_code == 200 and response.json()["models"][0]["id"] == "new-model"
+    assert PAYLOAD["api_key"] not in response.text
+    response = await client.post(
+        "/api/agents/api-options", json={"agent_id": aid, "base_url": "http://localhost/other"}
+    )
+    assert response.status_code == 422
+
+
+async def test_discovery_metadata_and_no_completion_fallback(client):
+    from app.schemas.agent import ConnectionDraft
+
+    seen = []
+
+    def respond(request):
+        seen.append(request.method)
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "id": "reasoner",
+                        "reasoning": {"supported_efforts": ["high", "low", "none"], "mandatory": True},
+                        "provider_secret": "never return this",
+                    },
+                    {"id": "plain", "supported_parameters": ["temperature"]},
+                    {"id": "test-key"},
+                ]
+            },
+        )
+
+    body = ConnectionDraft(base_url="http://localhost/v1", api_key="test-key", model="test-model")
+    result = await probe_api(
+        body, client.app.state.settings, transport=httpx.MockTransport(respond), models_only=True
+    )
+    assert seen == ["GET"]
+    assert [item["id"] for item in result["models"]] == ["reasoner", "plain"]
+    assert [item["id"] for item in result["models"][0]["reasoning_levels"]] == ["high", "low"]
+    assert result["models"][1]["supports_reasoning"] is False
+    assert "provider_secret" not in str(result)
+
+    def missing(request):
+        assert request.method == "GET"
+        return httpx.Response(404)
+
+    result = await probe_api(
+        body, client.app.state.settings, transport=httpx.MockTransport(missing), models_only=True
+    )
+    assert not result["ok"]

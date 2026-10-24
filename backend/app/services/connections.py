@@ -1,4 +1,5 @@
 import asyncio
+import json
 import tempfile
 import time
 from collections import defaultdict, deque
@@ -6,11 +7,42 @@ from pathlib import Path
 
 import httpx
 
+from app.acp.api_models import model_metadata
 from app.acp.client import ACPSession
+from app.acp.pool import create_session
 from app.acp.types import AgentRuntimeConfig
 from app.acp.url_policy import PinnedTransport, completion_url
 from app.core.deps import fail
 from app.services.agent_service import policy
+
+
+async def native_options(
+    runtime: str, model: str | None, settings, reasoning_effort: str | None = None
+) -> dict:
+    cfg = AgentRuntimeConfig(
+        agent_id="model-discovery",
+        handle="@discovery",
+        runtime=runtime,
+        model=model,
+        reasoning_effort=reasoning_effort,
+    )
+    with tempfile.TemporaryDirectory(prefix="aiteams-models-", ignore_cleanup_errors=True) as workspace:
+        session = create_session(cfg, Path(workspace), settings)
+        assert isinstance(session, ACPSession)
+        # This disposable session only performs ACP setup; never sends a prompt.
+        session.diagnostic = True
+        try:
+            async with asyncio.timeout(30):
+                await session.start()
+            return session.model_options()
+        except Exception:
+            fail(
+                502,
+                "Không tải được model/reasoning qua ACP; kiểm tra binary, đăng nhập CLI và model đã chọn.",
+                "acp_discovery_failed",
+            )
+        finally:
+            await session.close()
 
 
 class ConnectionLimiter:
@@ -27,7 +59,7 @@ class ConnectionLimiter:
         calls.append(now)
 
 
-async def test_api(body, settings, transport=None) -> dict:
+async def test_api(body, settings, transport=None, *, models_only: bool = False) -> dict:
     started = time.monotonic()
     status = None
     try:
@@ -53,9 +85,9 @@ async def test_api(body, settings, transport=None) -> dict:
                     if status == 200:
                         async for chunk in response.aiter_bytes():
                             payload.extend(chunk)
-                            if len(payload) > 1024 * 1024:
+                            if len(payload) > 8 * 1024 * 1024:
                                 raise ValueError("Response too large")
-                if status in {404, 405}:
+                if status in {404, 405} and not models_only:
                     async with client.stream(
                         "POST",
                         completion_url(body.base_url),
@@ -70,11 +102,13 @@ async def test_api(body, settings, transport=None) -> dict:
                         status = response.status_code
                     models = []
                 elif status == 200:
-                    import json
-
                     data = json.loads(payload)
                     # Only return model ids. Never relay arbitrary provider fields or error bodies.
-                    models = [{"id": str(item["id"])} for item in data.get("data", []) if "id" in item]
+                    models = [
+                        model_metadata(item)
+                        for item in data.get("data", [])
+                        if isinstance(item, dict) and isinstance(item.get("id"), str)
+                    ]
                     secrets = [
                         body.api_key.get_secret_value(),
                         *(v.get_secret_value() for v in body.extra_headers.values()),
@@ -82,9 +116,8 @@ async def test_api(body, settings, transport=None) -> dict:
                     models = [
                         item
                         for item in models
-                        if not any(secret and secret in item["id"] for secret in secrets)
+                        if not any(secret and secret in json.dumps(item) for secret in secrets)
                     ]
-                    models = [{"id": item["id"][:100]} for item in models]
                 else:
                     models = []
         return {
@@ -105,7 +138,7 @@ async def test_api(body, settings, transport=None) -> dict:
 
 async def test_native(cfg: AgentRuntimeConfig, catalog) -> dict:
     started = time.monotonic()
-    with tempfile.TemporaryDirectory(prefix="aiteams-connection-") as workspace:
+    with tempfile.TemporaryDirectory(prefix="aiteams-connection-", ignore_cleanup_errors=True) as workspace:
         session = ACPSession(cfg, Path(workspace), diagnostic=True)
         try:
             async with asyncio.timeout(30):

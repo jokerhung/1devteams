@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from app.acp.client import ACPSession, RuntimePolicyError
+from app.acp.jsonrpc import RPCError
 from app.acp.types import ACPStreamEvent
 
 
@@ -160,12 +161,13 @@ async def test_claude_config_options(make_session, cfg):
         await session.close()
 
 
-async def test_model_fallback(make_session, handshake):
+async def test_model_selection_failure_is_not_silently_ignored(make_session, handshake):
     handshake[-1] = {"expect": "session/set_model", "error": {"code": -32601, "message": "Unsupported"}}
     session = make_session([*handshake, {"expect": "session/prompt", "reply": {"stopReason": "end_turn"}}])
     try:
-        await session.start()
-        assert (await collect(session))[-1].metadata["model_effective"] == "default"
+        with pytest.raises(RPCError):
+            await session.start()
+        assert not session.alive
     finally:
         await session.close()
 

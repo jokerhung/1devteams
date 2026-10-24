@@ -227,7 +227,14 @@ class GitService:
         return "".join(blocks)
 
     async def commit_and_push(
-        self, files: list[str], message: str, *, remote: str, branch: str, default_branch: str = ""
+        self,
+        files: list[str],
+        message: str,
+        *,
+        remote: str,
+        branch: str,
+        default_branch: str = "",
+        on_commit: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
         if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", remote):
             raise ValueError("Invalid remote name")
@@ -259,12 +266,7 @@ class GitService:
             if len(values) >= 2 and values[0].isdigit() and values[1].isdigit():
                 insertions += int(values[0])
                 deletions += int(values[1])
-        if (await self.run("rev-parse", "--abbrev-ref", "HEAD")).strip() != branch:
-            raise ValueError("Branch changed before push; local commit preserved")
-        output = await self.run("push", remote, branch)
-        commit_url = commit_web_url(await self.run("remote", "get-url", remote), full)
-        return {
-            **({"commit_url": commit_url} if commit_url else {}),
+        result = {
             "commit_hash": full[:7],
             "commit_hash_full": full,
             "branch": branch,
@@ -272,5 +274,20 @@ class GitService:
             "message": message,
             "insertions": insertions,
             "deletions": deletions,
-            "push_output": output,
         }
+        if on_commit:
+            await on_commit(result)
+        return await self.push_existing(result, remote=remote)
+
+    async def push_existing(self, result: dict[str, Any], *, remote: str) -> dict[str, Any]:
+        branch = result["branch"]
+        if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", remote):
+            raise ValueError("Invalid remote name")
+        if (await self.run("branch", "--show-current")).strip() != branch:
+            raise ValueError("Branch changed before push; local commit preserved")
+        full = (await self.run("rev-parse", "HEAD")).strip()
+        if full != result["commit_hash_full"]:
+            raise ValueError("HEAD changed; cannot retry the pending release")
+        output = await self.run("push", remote, branch)
+        commit_url = commit_web_url(await self.run("remote", "get-url", remote), full)
+        return {**result, "push_output": output, **({"commit_url": commit_url} if commit_url else {})}

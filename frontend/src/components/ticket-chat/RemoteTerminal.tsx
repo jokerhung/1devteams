@@ -1,38 +1,86 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
-import { apiFetch, send } from "@/lib/api";
+import { ApiError, apiFetch } from "@/lib/api";
+import { MoreHorizontal, RotateCw } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+
+const terminalKeys = [
+  { label: "Ctrl+C", description: "Ngắt lệnh", data: "\x03" },
+  { label: "Ctrl+D", description: "EOF / thoát shell", data: "\x04" },
+  { label: "Ctrl+Z", description: "Tạm dừng tiến trình", data: "\x1a" },
+  { label: "Ctrl+L", description: "Làm sạch màn hình", data: "\x0c" },
+  { label: "Ctrl+U", description: "Xóa dòng nhập", data: "\x15" },
+  { label: "Tab", description: "Hoàn thành", data: "\t" },
+  { label: "Esc", description: "Escape", data: "\x1b" },
+  { label: "Enter", description: "Xuống dòng", data: "\r" },
+  { label: "↑", description: "Mũi tên lên", data: "\x1b[A" },
+  { label: "↓", description: "Mũi tên xuống", data: "\x1b[B" },
+  { label: "→", description: "Mũi tên phải", data: "\x1b[C" },
+  { label: "←", description: "Mũi tên trái", data: "\x1b[D" },
+];
 
 export default function RemoteTerminal({
   projectId,
   docked = false,
+  reconnectKey = 0,
+  active = true,
+  commandTarget,
 }: {
   projectId: string;
   docked?: boolean;
+  reconnectKey?: number;
+  active?: boolean;
+  commandTarget?: HTMLDivElement | null;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | null>(null);
-  const write = useRef<(text: string) => void>(() => {});
+  const write = useRef<(text: string) => boolean>(() => false);
+  const [command, setCommand] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [status, setStatus] = useState("Đang kết nối…");
   const [session, setSession] = useState("");
+  const [scroll, setScroll] = useState({ top: 0, max: 0 });
+  const touch = useRef<{ y: number; top: number; scrolling: boolean } | null>(
+    null,
+  );
   useEffect(() => {
+    if (!active) return;
+    setStatus("Đang kết nối…");
     let disposed = false;
     let source: EventSource | undefined;
     let observer: ResizeObserver | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let input = "";
     let ready = false;
+    let stopped = false;
+    let connecting = false;
+    let generation = 0;
+    let retries = 0;
+    let lastFrame = Date.now();
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let readyTimer: ReturnType<typeof setTimeout> | undefined;
+    let configRequest: AbortController | undefined;
+    let inputRequest = new AbortController();
     let pending: Promise<unknown> = Promise.resolve();
+    let scrollFrame = 0;
+    setScroll({ top: 0, max: 0 });
     const term = new Terminal({
       fontFamily: "JetBrains Mono, Consolas, monospace",
       fontSize: 12,
       theme: { background: "#0c0a09" },
       scrollback: 3000,
       convertEol: false,
+      disableStdin: true,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -43,15 +91,84 @@ export default function RemoteTerminal({
       }),
     );
     terminal.current = term;
+    const syncScroll = () => {
+      if (scrollFrame) return;
+      scrollFrame = requestAnimationFrame(() => {
+        scrollFrame = 0;
+        if (disposed) return;
+        const buffer = term.buffer.active;
+        setScroll((previous) =>
+          previous.top === buffer.viewportY && previous.max === buffer.baseY
+            ? previous
+            : { top: buffer.viewportY, max: buffer.baseY },
+        );
+      });
+    };
+    term.onScroll(syncScroll);
+    term.onWriteParsed(syncScroll);
+    term.onResize(syncScroll);
+    const disconnect = () => {
+      generation++;
+      ready = false;
+      term.options.disableStdin = true;
+      input = "";
+      clearTimeout(timer);
+      clearTimeout(readyTimer);
+      configRequest?.abort();
+      inputRequest.abort();
+      inputRequest = new AbortController();
+      if (source) {
+        source.onmessage = null;
+        source.onerror = null;
+        source.close();
+        source = undefined;
+      }
+    };
+    const reconnect = (delay?: number) => {
+      if (disposed || stopped) return;
+      disconnect();
+      clearTimeout(retryTimer);
+      if (!navigator.onLine) {
+        setStatus("Mất mạng — terminal sẽ tự kết nối lại khi có mạng");
+        return;
+      }
+      const wait =
+        delay ?? Math.min(30_000, 2_000 * 2 ** Math.min(retries++, 4));
+      setStatus(
+        `Mất kết nối — tự kết nối lại sau ${Math.ceil(wait / 1000)} giây…`,
+      );
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined;
+        void connect();
+      }, wait);
+    };
+    const fail = (error: unknown) => {
+      if (disposed) return;
+      if (
+        error instanceof ApiError &&
+        [400, 401, 403, 404, 422].includes(error.status)
+      ) {
+        stopped = true;
+        disconnect();
+        clearTimeout(retryTimer);
+        setStatus(error.message);
+      } else reconnect();
+    };
     const action = (body: object) => {
+      const version = generation;
+      const controller = inputRequest;
       pending = pending
         .then(() =>
-          disposed
+          disposed || !ready || version !== generation
             ? undefined
-            : send(`/projects/${projectId}/terminal/input`, body),
+            : apiFetch(`/projects/${projectId}/terminal/input`, {
+                method: "POST",
+                body: JSON.stringify(body),
+                signal: controller.signal,
+              }),
         )
         .catch((e) => {
-          if (!disposed) setStatus(e.message);
+          if (version === generation) fail(e);
         });
     };
     const flush = () => {
@@ -63,120 +180,315 @@ export default function RemoteTerminal({
       }
     };
     write.current = (text) => {
+      if (!ready || disposed) return false;
       input += text;
       clearTimeout(timer);
       timer = setTimeout(flush, 25);
+      return true;
     };
+    const resize = () => {
+      if (
+        !term.element ||
+        !host.current?.clientWidth ||
+        !host.current?.clientHeight
+      )
+        return;
+      fit.fit();
+      if (ready) action({ type: "resize", cols: term.cols, rows: term.rows });
+    };
+    term.onData((data) => write.current(data));
     async function connect() {
+      if (disposed || stopped || connecting) return;
+      if (!navigator.onLine) {
+        reconnect();
+        return;
+      }
+      connecting = true;
+      const version = generation;
+      const request = new AbortController();
+      configRequest = request;
+      const configTimeout = setTimeout(() => request.abort(), 20_000);
       try {
         const config = await apiFetch<{ enabled: boolean }>(
           `/projects/${projectId}/terminal`,
+          { signal: request.signal },
         );
-        if (disposed) return;
+        if (disposed || version !== generation) return;
         if (!config.enabled) {
+          stopped = true;
           setStatus("Remote terminal đã tắt (ENABLE_REMOTE_TERMINAL=false)");
           return;
         }
-        term.open(host.current!);
-        fit.fit();
-        const resize = () => {
-          if (!host.current?.clientWidth || !host.current?.clientHeight) return;
-          fit.fit();
-          if (ready)
-            action({ type: "resize", cols: term.cols, rows: term.rows });
-        };
-        source = new EventSource(`/api/events?channel=terminal/${projectId}`);
-        source.onmessage = ({ data }) => {
+        if (!term.element) {
+          term.open(host.current!);
+          observer = new ResizeObserver(resize);
+          observer.observe(host.current!);
+          term.focus();
+        }
+        resize();
+        const stream = new EventSource(
+          `/api/events?channel=terminal/${projectId}`,
+        );
+        source = stream;
+        readyTimer = setTimeout(() => {
+          if (source === stream && !ready) reconnect();
+        }, 20_000);
+        stream.onmessage = ({ data }) => {
+          if (disposed || source !== stream) return;
+          lastFrame = Date.now();
           const frame = JSON.parse(data);
           if (frame.type === "ready") {
+            clearTimeout(readyTimer);
+            // The backend replays retained PTY output after ready; clear the old copy.
+            term.reset();
             ready = true;
+            retries = 0;
+            term.options.disableStdin = false;
             setStatus("Đã kết nối");
             setSession(frame.session_id);
             resize();
           } else if (frame.type === "output") term.write(frame.data);
           else if (frame.type === "error" || frame.type === "exit") {
-            setStatus(frame.data || "Shell đã kết thúc");
-            source?.close();
+            if (frame.type === "error" && frame.retryable) reconnect();
+            else {
+              stopped = true;
+              disconnect();
+              setStatus(frame.data || "Shell đã kết thúc");
+            }
           }
         };
-        source.onerror = () => {
-          source?.close();
-          setStatus("Mất kết nối — bấm Kết nối lại để tiếp tục phiên");
+        stream.onerror = () => {
+          if (source === stream) reconnect();
         };
-        term.onData((data) => write.current(data));
-        observer = new ResizeObserver(resize);
-        observer.observe(host.current!);
-        term.focus();
       } catch (e) {
-        if (!disposed) setStatus((e as Error).message);
+        if (version === generation) fail(e);
+      } finally {
+        clearTimeout(configTimeout);
+        if (configRequest === request) configRequest = undefined;
+        connecting = false;
+        if (
+          !disposed &&
+          !stopped &&
+          version !== generation &&
+          !ready &&
+          !source &&
+          !retryTimer
+        )
+          reconnect();
       }
     }
+    const wake = () => {
+      if (!stopped && (!ready || document.visibilityState === "visible"))
+        reconnect(500);
+    };
+    const focus = () => {
+      if (!ready) wake();
+    };
+    const visibility = () => {
+      if (document.visibilityState === "visible") wake();
+    };
+    const offline = () => {
+      reconnect();
+    };
+    window.addEventListener("online", wake);
+    window.addEventListener("offline", offline);
+    window.addEventListener("focus", focus);
+    document.addEventListener("visibilitychange", visibility);
+    const heartbeat = setInterval(() => {
+      if (
+        ready &&
+        document.visibilityState === "visible" &&
+        Date.now() - lastFrame > 45_000
+      )
+        reconnect();
+    }, 10_000);
     void connect();
     return () => {
       disposed = true;
+      disconnect();
+      clearTimeout(retryTimer);
+      clearInterval(heartbeat);
+      window.removeEventListener("online", wake);
+      window.removeEventListener("offline", offline);
+      window.removeEventListener("focus", focus);
+      document.removeEventListener("visibilitychange", visibility);
       clearTimeout(timer);
       source?.close();
+      cancelAnimationFrame(scrollFrame);
+      touch.current = null;
       observer?.disconnect();
       term.dispose();
       terminal.current = null;
     };
-  }, [projectId, attempt]);
+  }, [projectId, attempt, reconnectKey, active]);
+  const commandBox = (
+    <form
+      className="flex min-w-0 flex-1 items-center gap-1"
+      aria-label="Gửi lệnh terminal"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (active && command.trim() && write.current(command + "\r"))
+          setCommand("");
+      }}
+    >
+      <input
+        type="text"
+        aria-label="Type command"
+        placeholder="Type command…"
+        className="min-w-0 flex-1 rounded-md border border-stone-300 bg-white px-2 py-1 text-base text-stone-900 outline-none focus:border-sky-500"
+        value={command}
+        onChange={(event) => setCommand(event.target.value)}
+        maxLength={8191}
+        autoComplete="off"
+        autoCapitalize="off"
+        autoCorrect="off"
+        spellCheck={false}
+        enterKeyHint="send"
+        onKeyDown={(event) => {
+          if (
+            event.key === "Enter" &&
+            (event.nativeEvent.isComposing || event.keyCode === 229)
+          )
+            event.preventDefault();
+        }}
+      />
+      <button
+        type="submit"
+        className="btn btn-light shrink-0"
+        aria-label="Send command"
+        disabled={!active || status !== "Đã kết nối" || !command.trim()}
+      >
+        Send
+      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          type="button"
+          className="btn btn-light shrink-0"
+          aria-label="Phím đặc biệt terminal"
+          title="Phím đặc biệt terminal"
+          disabled={!active || status !== "Đã kết nối"}
+        >
+          <MoreHorizontal size={16} aria-hidden="true" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-64">
+          {terminalKeys.map(({ label, description, data }) => (
+            <DropdownMenuItem
+              key={label}
+              className="min-h-10 justify-between gap-4"
+              disabled={!active || status !== "Đã kết nối"}
+              onClick={() => {
+                if (active && status === "Đã kết nối") write.current(data);
+              }}
+            >
+              <span className="font-mono">{label}</span>
+              <span className="text-xs text-muted-foreground">
+                {description}
+              </span>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </form>
+  );
   return (
     <section
       aria-label="Remote terminal"
       className={docked ? "flex h-full min-h-0 flex-col" : undefined}
     >
-      <p className="mb-2 rounded bg-amber-50 p-2 text-xs text-amber-900">
-        Terminal chạy lệnh trực tiếp với quyền của bạn, không qua Permission
-        Guard của agent.
-      </p>
-      <div className="mb-2 flex flex-wrap gap-2 text-xs">
-        <button
-          className="btn btn-light"
-          onClick={() => setAttempt((n) => n + 1)}
-        >
-          Kết nối lại
-        </button>
-        <button
-          className="btn btn-light"
-          onClick={() => terminal.current?.clear()}
-        >
-          Xoá màn hình
-        </button>
-        <button
-          className="btn btn-light"
-          onClick={() =>
-            navigator.clipboard
-              .writeText(terminal.current?.getSelection() || "")
-              .catch(() => setStatus("Không thể copy"))
-          }
-        >
-          Copy
-        </button>
-        {["git status", "git log --oneline -10", "npm test"].map((cmd) => (
+      {!docked && (
+        <header className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+          <b>Terminal</b>
           <button
-            key={cmd}
-            disabled={status !== "Đã kết nối"}
             className="btn btn-light"
-            onClick={() => write.current(cmd + "\r")}
+            aria-label="Kết nối lại terminal"
+            title="Kết nối lại terminal"
+            onClick={() => setAttempt((n) => n + 1)}
           >
-            {cmd}
+            <RotateCw size={15} aria-hidden="true" />
           </button>
-        ))}
-      </div>
-      <p role="status" className="mb-2 text-xs text-stone-500">
-        {status}
-      </p>
+          {commandBox}
+        </header>
+      )}
+      {docked && commandTarget && createPortal(commandBox, commandTarget)}
+      {status !== "Đang kết nối…" && status !== "Đã kết nối" && (
+        <p role="alert" className="mb-2 text-xs text-red-700">
+          {status}
+        </p>
+      )}
       <div
-        ref={host}
-        data-testid="remote-terminal"
-        data-session-id={session}
         className={
           docked
-            ? "min-h-0 flex-1 overflow-hidden rounded-lg bg-[#0c0a09] p-2"
-            : "h-[50vh] min-h-72 overflow-hidden rounded-lg bg-[#0c0a09] p-2"
+            ? "relative flex min-h-0 flex-1 overflow-hidden rounded-lg bg-[#0c0a09]"
+            : "relative flex h-[50vh] min-h-72 overflow-hidden rounded-lg bg-[#0c0a09]"
         }
-      />
+      >
+        <div
+          ref={host}
+          data-testid="remote-terminal"
+          data-session-id={session}
+          data-connected={status === "Đã kết nối"}
+          className="remote-terminal-content min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg bg-[#0c0a09] p-2"
+          onTouchStart={(event) => {
+            if (event.touches.length !== 1 || !terminal.current) {
+              touch.current = null;
+              return;
+            }
+            touch.current = {
+              y: event.touches[0].clientY,
+              top: terminal.current.buffer.active.viewportY,
+              scrolling: false,
+            };
+          }}
+          onTouchMove={(event) => {
+            const start = touch.current;
+            const term = terminal.current;
+            if (
+              !start ||
+              !term ||
+              event.touches.length !== 1 ||
+              !term.buffer.active.baseY
+            )
+              return;
+            const delta = start.y - event.touches[0].clientY;
+            if (!start.scrolling && Math.abs(delta) < 6) return;
+            start.scrolling = true;
+            const lineHeight =
+              (term.element?.querySelector(".xterm-screen")?.clientHeight ||
+                event.currentTarget.clientHeight) / term.rows;
+            term.scrollToLine(
+              Math.max(
+                0,
+                Math.min(
+                  term.buffer.active.baseY,
+                  Math.round(start.top + delta / lineHeight),
+                ),
+              ),
+            );
+          }}
+          onTouchEnd={() => {
+            touch.current = null;
+          }}
+          onTouchCancel={() => {
+            touch.current = null;
+          }}
+        />
+        <div className="absolute inset-y-2 right-0 z-10 flex w-6 items-stretch justify-center">
+          <input
+            type="range"
+            className="terminal-scrollbar"
+            aria-label="Cuộn lịch sử terminal"
+            aria-valuetext={`${scroll.top} / ${scroll.max}`}
+            min={0}
+            max={Math.max(1, scroll.max)}
+            step={1}
+            value={scroll.top}
+            disabled={!scroll.max}
+            onChange={(event) =>
+              terminal.current?.scrollToLine(Number(event.target.value))
+            }
+          />
+        </div>
+      </div>
     </section>
   );
 }

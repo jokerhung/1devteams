@@ -46,6 +46,29 @@ async def test_edit_restarts_only_if_changed(client):
         ] == 3
 
 
+async def test_reasoning_selection_persists_and_restarts(client):
+    response = await client.post(
+        "/api/agents",
+        json={
+            "handle": "@reasoner",
+            "display_name": "Reasoner",
+            "runtime": "codex",
+            "model": "model",
+            "reasoning_effort": "high",
+        },
+    )
+    assert response.status_code == 201, response.text
+    agent = response.json()
+    assert agent["reasoning_effort"] == "high"
+    with patch.object(client.app.state.acp_pool, "restart_agent", new_callable=AsyncMock) as restart:
+        response = await client.patch(f"/api/agents/{agent['id']}", json={"reasoning_effort": "low"})
+        assert response.json()["restart"]
+        assert response.json()["agent"]["reasoning_effort"] == "low"
+        restart.assert_awaited_once()
+    response = await client.patch(f"/api/agents/{agent['id']}", json={"reasoning_effort": None})
+    assert response.json()["agent"]["reasoning_effort"] is None
+
+
 async def test_seed_is_idempotent(client):
     async with client.app.state.db_session() as db:
         await seed(db, client.app.state.settings)

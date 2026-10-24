@@ -46,6 +46,7 @@ class APIParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
     temperature: float | None = Field(default=None, ge=0, le=2)
     max_tokens: int | None = Field(default=None, gt=0)
+    reasoning_format: Literal["reasoning_effort", "reasoning"] | None = None
     extra_headers: dict[str, SecretStr] = Field(default_factory=dict, repr=False, exclude=True)
 
 
@@ -54,6 +55,7 @@ class AgentRuntimeConfig(BaseModel):
     handle: str
     runtime: RuntimeType
     model: str | None = None
+    reasoning_effort: str | None = None
     fallback_model: str | None = None
     fallback_runtime: RuntimeType | None = None
     fallback_agent_id: str | None = None

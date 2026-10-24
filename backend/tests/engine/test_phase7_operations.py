@@ -29,8 +29,13 @@ async def test_windows_pty_resize_reconnect_and_expiry(engine_client):
                 output += frame["data"]
         with pytest.raises(ValueError):
             await manager.attach(client.owner["id"], entity["id"], client.workspace, 30, 120)
+        pending_reconnect = asyncio.create_task(
+            manager.attach(client.owner["id"], entity["id"], client.workspace, 30, 120)
+        )
+        await asyncio.sleep(0.05)
+        assert not pending_reconnect.done()
         await manager.detach(session)
-        resumed = await manager.attach(client.owner["id"], entity["id"], client.workspace, 30, 120)
+        resumed = await asyncio.wait_for(pending_reconnect, 2)
         assert resumed.id == session.id and "PTY_VERIFIED" in resumed.initial_replay
         await manager.detach(resumed)
         await asyncio.wait_for(session.closed.wait(), 5)
@@ -43,6 +48,7 @@ async def test_windows_pty_resize_reconnect_and_expiry(engine_client):
 
 async def test_terminal_disabled_audit_metrics(engine_client):
     client = engine_client
+    client.app.state.settings.enable_remote_terminal = False
     entity = await project(client)
     assert (await client.get(f"/api/projects/{entity['id']}/terminal")).json() == {"enabled": False}
     assert (

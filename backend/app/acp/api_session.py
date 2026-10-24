@@ -11,6 +11,7 @@ from pathlib import Path
 
 import httpx
 
+from app.acp.api_models import default_reasoning_format, reasoning_parameters
 from app.acp.security import scrub_data
 from app.acp.types import ACPStreamEvent, AgentRuntimeConfig, Json, PromptResult
 from app.acp.url_policy import PinnedTransport, URLPolicy, URLPolicyError, completion_url
@@ -99,7 +100,13 @@ class ApiAgentSession:
                 if key.lower() in {"host", "content-length", "transfer-encoding", "connection"}:
                     raise URLPolicyError("Unsafe API header override")
                 headers[key] = value.get_secret_value()
-            params = self.cfg.api_params.model_dump(exclude_none=True)
+            params = self.cfg.api_params.model_dump(exclude_none=True, exclude={"reasoning_format"})
+            params.update(
+                reasoning_parameters(
+                    self.cfg.reasoning_effort,
+                    self.cfg.api_params.reasoning_format or default_reasoning_format(self.cfg.base_url),
+                )
+            )
             await self._event(
                 "log", f"→ POST {httpx.URL(url).host}/chat/completions ({self.cfg.model}, stream)"
             )
@@ -170,7 +177,7 @@ class ApiAgentSession:
                             if content := delta.get("content"):
                                 result += content
                                 await self._event("message_chunk", content)
-                            if thought := delta.get("reasoning_content"):
+                            if thought := delta.get("reasoning_content") or delta.get("reasoning"):
                                 await self._event("thought_chunk", thought)
                             if choice.get("finish_reason"):
                                 finish = choice["finish_reason"]

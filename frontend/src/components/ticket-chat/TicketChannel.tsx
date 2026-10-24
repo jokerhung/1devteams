@@ -330,6 +330,7 @@ function Channel({
         status={state.status}
         memberCount={agents.length + (members.data?.users.length || 1)}
         canReport={!!config.data?.can_report}
+        canRelease={!!config.data?.can_confirm}
         onDrawer={() => setDrawer(true)}
         terminalOpen={terminal.open}
         onTerminal={() =>

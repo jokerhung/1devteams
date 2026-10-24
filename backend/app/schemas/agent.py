@@ -12,6 +12,7 @@ Profile = PermissionProfile | Literal["read_only", "developer", "tester", "leade
 class APIParameters(Input):
     temperature: float | None = Field(default=None, ge=0, le=2)
     max_tokens: int | None = Field(default=None, gt=0)
+    reasoning_format: Literal["reasoning_effort", "reasoning"] | None = None
     extra_headers: dict[str, SecretStr] = Field(default_factory=dict, repr=False)
 
 
@@ -26,6 +27,7 @@ class AgentCreate(Input):
     api_key: SecretStr | None = Field(default=None, repr=False)
     api_params: APIParameters = Field(default_factory=APIParameters)
     model: str | None = Field(default=None, max_length=100)
+    reasoning_effort: str | None = Field(default=None, max_length=100)
     fallback_model: str | None = Field(default=None, max_length=100)
     fallback_runtime: RuntimeType | None = None
     fallback_agent_id: str | None = Field(default=None, pattern=r"^[0-9a-fA-F-]{36}$")
@@ -51,6 +53,7 @@ class AgentPatch(Input):
     api_key: SecretStr | None = Field(default=None, repr=False)
     api_params: APIParameters | None = None
     model: str | None = Field(default=None, max_length=100)
+    reasoning_effort: str | None = Field(default=None, max_length=100)
     fallback_model: str | None = Field(default=None, max_length=100)
     fallback_runtime: RuntimeType | None = None
     fallback_agent_id: str | None = Field(default=None, pattern=r"^[0-9a-fA-F-]{36}$")
@@ -73,6 +76,7 @@ class AgentOut(Record):
     api_key_last4: str | None
     api_params: dict
     model: str | None
+    reasoning_effort: str | None = None
     fallback_model: str | None
     fallback_runtime: RuntimeType | None = None
     fallback_agent_id: str | None = None
@@ -101,6 +105,18 @@ class ConnectionDraft(Input):
     api_key: SecretStr
     model: str = Field(min_length=1, max_length=100)
     extra_headers: dict[str, SecretStr] = Field(default_factory=dict, repr=False)
+
+
+class NativeOptionsDraft(Input):
+    runtime: Literal["claude-code", "codex"]
+    model: str | None = Field(default=None, max_length=100)
+    reasoning_effort: str | None = Field(default=None, max_length=100)
+
+
+class APIOptionsDraft(Input):
+    base_url: str = Field(max_length=300)
+    api_key: SecretStr | None = Field(default=None, repr=False)
+    agent_id: str | None = Field(default=None, pattern=r"^[0-9a-fA-F-]{36}$")
 
 
 class ConnectionOut(Input):

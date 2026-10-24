@@ -177,6 +177,68 @@ a:focus-visible {
   background: #d5d3c2;
   border-radius: 99px;
 }
+.remote-terminal-content {
+  touch-action: pan-x pinch-zoom;
+  overscroll-behavior: contain;
+}
+.remote-terminal-content .xterm-scrollable-element > .scrollbar.vertical {
+  visibility: hidden;
+}
+.terminal-scrollbar {
+  writing-mode: vertical-lr;
+  direction: ltr;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 24px;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  touch-action: none;
+  cursor: ns-resize;
+  opacity: 0.4;
+  transition: opacity 150ms;
+}
+.terminal-scrollbar:hover,
+.terminal-scrollbar:focus-visible,
+.terminal-scrollbar:active {
+  opacity: 0.8;
+}
+.terminal-scrollbar:focus-visible {
+  outline: 1px solid #a8a29e;
+  outline-offset: -3px;
+  border-radius: 8px;
+}
+.terminal-scrollbar::-webkit-slider-runnable-track {
+  width: 2px;
+  border-radius: 6px;
+  background: rgb(168 162 158 / 12%);
+}
+.terminal-scrollbar::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 5px;
+  height: 36px;
+  margin-left: -1.5px;
+  border-radius: 8px;
+  background: #d6d3d1;
+}
+.terminal-scrollbar::-moz-range-track {
+  width: 2px;
+  border-radius: 6px;
+  background: rgb(168 162 158 / 12%);
+}
+.terminal-scrollbar::-moz-range-thumb {
+  width: 5px;
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: #d6d3d1;
+}
+.terminal-scrollbar:disabled {
+  opacity: 0.15;
+}
 .btn {
   display: inline-flex;
   align-items: center;
