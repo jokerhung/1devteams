@@ -14,6 +14,9 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "aiteams — Multi-Agent Workspace",
   description: "Quản lý AI Agent, Team và dự án trong workspace của bạn.",
+  icons: {
+    icon: "/favicon.ico?v=aiteams",
+  },
 };
 export default function RootLayout({
   children,

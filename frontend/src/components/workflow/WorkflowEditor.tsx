@@ -18,7 +18,7 @@ import { createWorkflowStore } from "./store";
 import { graphKey, serialize, nodeId, type FlowNode } from "./serialize";
 import { validateGraph, type ValidationIssue } from "./validate";
 import { autoLayout } from "./layout";
-import { templateGraph, type TemplateId } from "./templates";
+import { loadTemplateGraph, type TemplateId } from "./templates";
 import { WorkflowToolbar } from "./WorkflowToolbar";
 import { SidebarPalette, type PaletteItem } from "./SidebarPalette";
 import { WorkflowCanvas } from "./WorkflowCanvas";
@@ -310,7 +310,7 @@ function Editor({
         });
     }, 50);
   };
-  const loadTemplate = (template: TemplateId) => {
+  const loadTemplate = async (template: TemplateId) => {
     if (
       dirty &&
       !confirm(
@@ -318,7 +318,12 @@ function Editor({
       )
     )
       return;
-    store.getState().replace(templateGraph(template, agents));
+    try {
+      store.getState().replace(await loadTemplateGraph(template, project.id));
+    } catch (error) {
+      toast.error((error as Error).message);
+      return;
+    }
     setView("canvas");
     setTimeout(() => rf.current?.fitView({ padding: 0.15 }), 50);
   };

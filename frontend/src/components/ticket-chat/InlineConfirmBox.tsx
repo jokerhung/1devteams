@@ -119,7 +119,7 @@ export function InlineConfirmBox({
               ✓{" "}
               {String(
                 gate.payload.approved_label ||
-                  "Xác nhận (Báo @leader Push Git)",
+                  "Xác nhận (Báo @devops Commit & Push Git)",
               )}
             </button>
           </div>

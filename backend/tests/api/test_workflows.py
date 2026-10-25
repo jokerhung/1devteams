@@ -8,7 +8,7 @@ async def test_templates_versions_and_validation(client):
     workflow = entity["workflow"]
     wid = workflow["id"]
     assert workflow["status"] == "PUBLISHED" and workflow["is_valid"]
-    assert len((await client.get("/api/workflow-templates")).json()) == 3
+    assert len((await client.get("/api/workflow-templates")).json()) == 4
     response = await client.post(
         f"/api/projects/{entity['id']}/workflows", json={"name": "Feature", "ticket_prefix": "FEAT"}
     )

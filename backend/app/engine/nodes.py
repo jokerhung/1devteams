@@ -14,7 +14,7 @@ from langgraph.types import interrupt
 from app.acp.client import ACPSession
 from app.acp.guard import DynamicPermissionGuard
 from app.acp.security import scrub, scrub_data
-from app.acp.types import AgentRuntimeConfig, AgentSession
+from app.acp.types import AgentRuntimeConfig, AgentSession, PermissionProfile
 from app.db.base import now
 from app.db.models import Ticket
 from app.engine.conditions import evaluate
@@ -45,7 +45,7 @@ async def gate(
                 kind="CONFIRM" if kind == "human_confirm" else "INPUT",
                 node_id=nid,
                 interrupt_seq=seq,
-                title="Xác nhận bản sửa lỗi để @leader commit & push"
+                title="Xác nhận bản sửa lỗi để @devops commit & push"
                 if kind == "human_confirm"
                 else "Agent cần bạn bổ sung thông tin",
                 body=str(payload.get("question", payload.get("message", ""))),
@@ -572,7 +572,8 @@ def make_node(node: Node, agents: dict[str, AgentRuntimeConfig]) -> Callable[...
                 node,
                 state,
                 ctx,
-                "\nReview bản sửa và đề xuất commit. Không chạy git add/commit/push.\n"
+                "\nReview bản sửa và chốt danh sách file cần commit cùng commit message. "
+                "Sau khi approve, hệ thống thực thi git commit và git push đúng danh sách đã chốt.\n"
                 + snapshot["diff"]
                 + "\nFiles: "
                 + str(snapshot["files"])
@@ -583,7 +584,7 @@ def make_node(node: Node, agents: dict[str, AgentRuntimeConfig]) -> Callable[...
             files = []
             for name in dict.fromkeys(plan.files):
                 if name not in snapshot["files"]:
-                    raise ValueError("Leader đề xuất file không có thay đổi")
+                    raise ValueError("DevOps đề xuất file không có thay đổi")
                 if not safe_release_path(name):
                     await ctx.emit(
                         "error", "Loại file nhạy cảm khỏi release", metadata={"file": name}, node_id=nid
@@ -591,15 +592,23 @@ def make_node(node: Node, agents: dict[str, AgentRuntimeConfig]) -> Callable[...
                 else:
                     files.append(name)
             if not plan.approve or not files:
-                await ctx.emit("log", "\n".join(plan.concerns) or "Leader không duyệt release", node_id=nid)
+                await ctx.emit("log", "\n".join(plan.concerns) or "DevOps không duyệt release", node_id=nid)
                 return {
                     "last_route": state.get("last_route", {}) | {nid: "failed"},
                     "approval": False,
-                    "error": "Leader không duyệt release",
+                    "error": "DevOps không duyệt release",
                 }
             latest = await ctx.agent(str(node.data["agent_id"]))
             if latest.runtime == "openai-api" or not latest.permission_profile.can_git_release:
                 raise ValueError("Release permission revoked during review")
+            await ctx.emit(
+                "log",
+                "DevOps đã chốt danh sách file; bắt đầu commit và push.",
+                sender_type="AGENT",
+                sender_name=cfg.handle,
+                node_id=nid,
+                metadata={"files": files, "commit_message": plan.commit_message},
+            )
             result = await ctx.git.commit_and_push(
                 files,
                 plan.commit_message,
@@ -661,6 +670,34 @@ def make_node(node: Node, agents: dict[str, AgentRuntimeConfig]) -> Callable[...
             count = 1
         iterations[nid] = count
         clean, files, cfg, route, cursors = await agent_turn(node, state, ctx)
+        document = node.data.get("document_name")
+        if document and route != "need_info":
+            import re
+
+            if not isinstance(document, str) or not re.fullmatch(r"[a-zA-Z0-9_-]+\.md", document):
+                raise ValueError("Invalid workflow document name")
+            relative = f"docs/tickets/{ctx.ticket_id}/{document}"
+            document_guard = DynamicPermissionGuard(PermissionProfile(allow_write=True), ctx.git.workspace)
+            decision = document_guard.check_write(relative)
+            if not decision.allowed:
+                raise ValueError("Workflow document path is not writable")
+            destination = document_guard.resolve_path(relative)
+
+            def save_document() -> None:
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(clean, encoding="utf-8")
+
+            await asyncio.to_thread(save_document)
+            files = sorted(set(files) | {relative})
+            ctx.had_writer = True
+            await ctx.emit(
+                "file_edit",
+                f"Đã lưu {relative}",
+                sender_type="AGENT",
+                sender_name=cfg.handle,
+                node_id=nid,
+                metadata={"path": relative},
+            )
         wrote = state.get("wrote_files", False) or ctx.had_writer
         return {
             "outputs": [

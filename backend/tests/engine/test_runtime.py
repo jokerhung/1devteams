@@ -112,7 +112,7 @@ async def test_message_with_attachments_and_manual_commands(engine_client):
     files = list((client.workspace / ".aiteams" / "attachments" / tid).iterdir())
     assert len(files) == 2
     assert ".aiteams" not in client.git("status", "--porcelain", "--untracked-files=all")
-    assert (await client.post(f"/api/tickets/{tid}/messages", json={"text": "@leader OK"})).status_code == 201
+    assert (await client.post(f"/api/tickets/{tid}/messages", json={"text": "@devops OK"})).status_code == 201
     await settled(client, tid, "COMPLETED")
     assert ".aiteams" not in client.git("ls-tree", "-r", "--name-only", "HEAD")
 
@@ -250,7 +250,7 @@ async def test_action_authorization(engine_client):
         await client.post(f"/api/tickets/{tid}/confirm", headers=headers, json={"approved": True})
     ).status_code == 403
     assert (
-        await client.post(f"/api/tickets/{tid}/messages", headers=headers, json={"text": "@leader OK"})
+        await client.post(f"/api/tickets/{tid}/messages", headers=headers, json={"text": "@devops OK"})
     ).status_code == 403
     assert (await client.post(f"/api/tickets/{tid}/cancel", headers=headers)).status_code == 200
 

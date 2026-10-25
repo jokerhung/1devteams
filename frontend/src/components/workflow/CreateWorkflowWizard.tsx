@@ -14,12 +14,8 @@ import {
   emojis,
   colors,
 } from "@/components/ui-app/primitives";
-import {
-  templateOptions,
-  templateGraph,
-  missingRoles,
-  type TemplateId,
-} from "./templates";
+import { templateOptions, type TemplateId } from "./templates";
+import type { WorkflowGraph } from "./serialize";
 export function suggestPrefix(name: string) {
   if (/security/i.test(name)) return "SEC";
   if (/bug/i.test(name)) return "BUG";
@@ -51,12 +47,28 @@ export function CreateWorkflowWizard({ pid }: { pid: string }) {
     [error, setError] = useState(""),
     [created, setCreated] = useState<Workflow | null>(null);
   useEffect(() => {
-    const source = new URLSearchParams(window.location.search).get("duplicate");
+    const params = new URLSearchParams(window.location.search);
+    const source = params.get("duplicate");
     if (source) {
       setTemplate("duplicate");
       setSourceId(source);
       setName("Bản sao workflow");
       setPrefix("COPY");
+    } else {
+      const requested = templateOptions.find(
+        (item) => item.id === params.get("template"),
+      );
+      if (requested) {
+        setTemplate(requested.id);
+        setName(requested.id === "blank" ? "Workflow mới" : requested.name);
+        setPrefix(
+          requested.id === "add_feature"
+            ? "FEAT"
+            : requested.id === "blank"
+              ? "WF"
+              : "BUG",
+        );
+      }
     }
   }, []);
   const agents = useQuery({
@@ -67,6 +79,13 @@ export function CreateWorkflowWizard({ pid }: { pid: string }) {
     queryKey: keys.workflows(pid),
     queryFn: () =>
       apiFetch<Workflow[]>(`/projects/${pid}/workflows?include_archived=true`),
+  });
+  const templates = useQuery({
+    queryKey: ["workflow-templates", pid],
+    queryFn: () =>
+      apiFetch<{ id: TemplateId; name: string; graph: WorkflowGraph }[]>(
+        `/workflow-templates?project_id=${pid}`,
+      ),
   });
   if (agents.isLoading || flows.isLoading) return <Loading />;
   if (!agents.data || !flows.data)
@@ -81,8 +100,25 @@ export function CreateWorkflowWizard({ pid }: { pid: string }) {
     /^[A-Z]{2,10}$/.test(prefix) &&
     !duplicateName &&
     !duplicatePrefix;
-  const missing =
-    template === "duplicate" ? [] : missingRoles(template, agents.data);
+  const selectedTemplate = templates.data?.find((item) => item.id === template);
+  const missing = Array.from(
+    new Set(
+      (selectedTemplate?.graph.nodes || [])
+        .filter(
+          (node) =>
+            ["agent", "git_release"].includes(node.type) &&
+            !node.data?.agent_id,
+        )
+        .map((node) =>
+          String(
+            node.data?.agent_handle ||
+              node.data?.agent_role ||
+              node.data?.label ||
+              node.id,
+          ),
+        ),
+    ),
+  );
   const source = flows.data.find((w) => w.id === sourceId);
   return (
     <>
@@ -145,7 +181,7 @@ export function CreateWorkflowWizard({ pid }: { pid: string }) {
                       description,
                       icon,
                       color,
-                      template: "blank",
+                      template,
                     },
               );
               setCreated(result);
@@ -155,12 +191,6 @@ export function CreateWorkflowWizard({ pid }: { pid: string }) {
                 `/workflows/${result.id}`,
                 { description, icon, color },
                 "PATCH",
-              );
-            else
-              await send(
-                `/workflows/${result.id}/graph`,
-                templateGraph(template, agents.data!),
-                "PUT",
               );
             await client.invalidateQueries({ queryKey: ["projects"] });
             toast.success(
@@ -246,32 +276,75 @@ export function CreateWorkflowWizard({ pid }: { pid: string }) {
               Chọn điểm bắt đầu
             </legend>
             {[
-              ...templateOptions,
-              { id: "duplicate", name: "Nhân bản từ workflow có sẵn" },
+              { id: "blank", name: "Trống" },
+              {
+                id: "preset",
+                name: "Template",
+              },
+              { id: "duplicate", name: "Nhân bản từ flow có sẵn" },
             ].map((t) => (
               <label
                 key={t.id}
-                className={`flex cursor-pointer gap-3 rounded-xl border p-4 text-xs ${template === t.id ? "border-stone-800 bg-stone-50" : "border-stone-200"}`}
+                className={`flex cursor-pointer gap-3 rounded-xl border p-4 text-xs ${(t.id === "preset" ? !["blank", "duplicate"].includes(template) : template === t.id) ? "border-stone-800 bg-stone-50" : "border-stone-200"}`}
               >
                 <input
                   type="radio"
                   name="template"
                   value={t.id}
-                  checked={template === t.id}
-                  onChange={() => setTemplate(t.id as typeof template)}
+                  checked={
+                    t.id === "preset"
+                      ? !["blank", "duplicate"].includes(template)
+                      : template === t.id
+                  }
+                  onChange={() =>
+                    setTemplate(
+                      t.id === "preset"
+                        ? "bugfix_default"
+                        : (t.id as typeof template),
+                    )
+                  }
                 />
-                {t.name}
+                <span>
+                  <b className="font-semibold">{t.name}</b>
+                </span>
               </label>
             ))}
+            {!["blank", "duplicate"].includes(template) && (
+              <div className="space-y-2">
+                {templates.isPending && <p role="status">Đang tải template…</p>}
+                {templates.error && (
+                  <p role="alert" className="error">
+                    {templates.error.message}
+                  </p>
+                )}
+                <label className="field">
+                  Chọn template
+                  <select
+                    value={template}
+                    onChange={(e) => setTemplate(e.target.value as TemplateId)}
+                    disabled={templates.isPending || !!templates.error}
+                    required
+                  >
+                    {templates.data
+                      ?.filter((item) => item.id !== "blank")
+                      .map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              </div>
+            )}
             {template === "duplicate" && (
               <label className="field">
-                Workflow nguồn
+                Chọn flow có sẵn
                 <select
                   value={sourceId}
                   onChange={(e) => setSourceId(e.target.value)}
                   required
                 >
-                  <option value="">Chọn workflow</option>
+                  <option value="">Chọn flow</option>
                   {flows.data.map((w) => (
                     <option value={w.id} key={w.id}>
                       {w.name} ({w.ticket_prefix})
@@ -301,7 +374,9 @@ export function CreateWorkflowWizard({ pid }: { pid: string }) {
               Điểm bắt đầu:{" "}
               {template === "duplicate"
                 ? `Nhân bản ${source?.name || ""}`
-                : templateOptions.find((t) => t.id === template)?.name}
+                : template === "blank"
+                  ? "Trống"
+                  : `Template: ${selectedTemplate?.name || template}`}
             </p>
             <p>
               Workflow được tạo ở trạng thái Nháp. Bạn có thể kéo thả, nối dây
@@ -334,7 +409,10 @@ export function CreateWorkflowWizard({ pid }: { pid: string }) {
             disabled={
               busy ||
               (step === 1 && !infoValid) ||
-              (step === 2 && template === "duplicate" && !sourceId)
+              (step === 2 && template === "duplicate" && !sourceId) ||
+              (step === 2 &&
+                !["blank", "duplicate"].includes(template) &&
+                !selectedTemplate)
             }
           >
             {busy

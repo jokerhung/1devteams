@@ -46,6 +46,6 @@ class ReleasePlan(BaseModel):
 def parse_release(text: str) -> ReleasePlan:
     matches = re.findall(r"^@@RELEASE\s*\n(.*?)^@@END\s*$", text, re.MULTILINE | re.DOTALL)
     if not matches:
-        raise ValueError("Leader phải trả khối @@RELEASE ... @@END")
+        raise ValueError("DevOps phải trả khối @@RELEASE ... @@END")
     value: Any = json.loads(matches[-1])
     return ReleasePlan.model_validate(value)

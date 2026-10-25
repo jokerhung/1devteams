@@ -450,7 +450,7 @@ async def send_message(tid: UUID, body: ChatMessage, request: Request, db: DB, u
     if status == "WAITING_USER_INPUT":
         await runner.reply(str(tid), body.text or "Xem tệp đính kèm trong tin nhắn.", user)
     elif status == "WAITING_USER_CONFIRM":
-        if re.search(r"@leader\b", body.text, re.I) and re.search(
+        if re.search(r"@devops\b", body.text, re.I) and re.search(
             r"\b(CONFIRM|DONE|OK|ĐÃ FIX|XÁC NHẬN)\b", body.text, re.I
         ):
             await runner.confirm(str(tid), True, None, user)

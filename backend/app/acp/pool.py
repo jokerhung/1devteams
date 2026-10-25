@@ -115,6 +115,20 @@ class ACPProcessPool:
                     startup = asyncio.create_task(session.start())
                     self._starting[key] = startup
                     break
+                # A sequential workflow may have more roles than process slots.
+                # Retire an idle session from this ticket; a fresh session gets
+                # its context rebuilt by the workflow runner on the next turn.
+                idle = [
+                    candidate
+                    for candidate, existing in self.sessions.items()
+                    if candidate[0] == ticket_id
+                    and candidate not in self._starting
+                    and not existing.busy
+                    and (existing.cfg.runtime == "openai-api") == api
+                ]
+                if idle:
+                    await self._remove(min(idle, key=lambda candidate: self.sessions[candidate].last_used))
+                    continue
                 await self._condition.wait()
         # Startup can involve slow CLI handshakes or DNS. Reserve capacity above, but
         # let unrelated tickets start and shutdown/restart cancel a pending handshake.

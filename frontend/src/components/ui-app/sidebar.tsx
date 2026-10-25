@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Bell,
   Bot,
+  Workflow,
   Folder,
   ChevronDown,
   ChevronRight,
@@ -362,6 +363,20 @@ export function Sidebar() {
             >
               {agents.data?.length || 0} · {teams.data?.length || 0}
             </span>
+          </Link>
+          <Link
+            onClick={() => setMobile(false)}
+            className={`side-item ${compact ? "justify-center !px-0" : ""} ${pathname === "/templates" || pathname.startsWith("/templates/") ? "active" : ""}`}
+            title={compact ? "Template" : undefined}
+            href="/templates"
+            aria-current={
+              pathname === "/templates" || pathname.startsWith("/templates/")
+                ? "page"
+                : undefined
+            }
+          >
+            <Workflow size={16} aria-hidden="true" />
+            <span className={compact ? "sr-only" : undefined}>Template</span>
           </Link>
         </nav>
         {compact ? (

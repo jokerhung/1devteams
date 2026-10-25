@@ -104,6 +104,9 @@ export function WorkflowCanvas({
           onInit(rf);
         }}
         onNodesChange={disabled ? undefined : store.getState().nodesChanged}
+        onNodeClick={
+          disabled ? (_, node) => store.getState().select(node.id) : undefined
+        }
         onEdgesChange={disabled ? undefined : store.getState().edgesChanged}
         onConnect={store.getState().connect}
         isValidConnection={(connection) =>

@@ -6,6 +6,12 @@ from app.engine.state import WorkflowState
 from app.schemas.workflow import Node
 
 DEFAULT_SYSTEM_PROMPTS = {
+    "COORDINATOR": "Bạn là Leader điều phối công việc. Tiếp nhận yêu cầu, làm rõ phạm vi và "
+    "tiêu chí nghiệm thu, bàn giao yêu cầu cho các vai trò trong workflow. Không commit/push.",
+    "DESIGNER": "Bạn là UI/UX Designer. Đọc yêu cầu và giao diện hiện tại, thiết kế màn hình, "
+    "trạng thái và tương tác bằng Markdown theo hướng dẫn node. Không sửa code hay commit/push.",
+    "PLANNER": "Bạn là Implementation Planner. Đọc yêu cầu, thiết kế và mã nguồn; viết kế hoạch "
+    "triển khai theo từng bước, file/module và tiêu chí hoàn thành. Không commit/push.",
     "BA": "Bạn là Business Analyst của dự án. Tiếp nhận phản ánh lỗi; đọc mã nguồn (chỉ đọc) để hiểu "
     "ngữ cảnh; viết kịch bản tái tạo lỗi (STR) gồm điều kiện tiên quyết, các bước, kết quả thực tế, "
     "kết quả mong muốn, file/màn hình liên quan. Nếu thiếu thông tin thì hỏi lại người dùng tối đa "
@@ -16,10 +22,13 @@ DEFAULT_SYSTEM_PROMPTS = {
     "nguyên nhân, cách sửa, danh sách file đã sửa.",
     "TESTER": "Bạn là QA. Đối chiếu thay đổi (git diff) với STR; chạy test liên quan; không sửa mã nguồn "
     "ứng dụng, không chạy git commit/push. Kết luận ĐẠT hoặc CHƯA ĐẠT kèm lý do cụ thể.",
-    "LEADER": "Bạn là Tech Lead. Chỉ hoạt động sau khi người dùng xác nhận. Review git diff: phát hiện "
+    "LEADER": "Bạn là DevOps (Git Release), handle @devops. Chỉ phát hành sau khi người dùng xác nhận. "
+    "Bạn có quyền git commit và git push qua bước Git Release của hệ thống sau khi chốt danh sách file. "
+    "Review git diff: phát hiện "
     "file rác, file nhạy cảm (.env, log), code vi phạm chuẩn. Đề xuất danh sách file cần commit "
-    "và commit message theo Conventional Commits. Không tự chạy git add/commit/push — "
-    "hệ thống sẽ thực thi.",
+    "và chốt commit message theo Conventional Commits. Trả kế hoạch @@RELEASE với approve, files, "
+    "commit_message và concerns. Hệ thống thực thi git add/commit/push đúng danh sách files đã chốt; "
+    "không commit file ngoài danh sách, không dùng git add . và không push trước khi chốt kế hoạch.",
 }
 
 
@@ -48,6 +57,14 @@ def build_node_prompt(
     if agent.runtime == "openai-api":
         parts.append("Bạn không có công cụ; chỉ dùng thông tin được cung cấp, không giả vờ đã chạy lệnh.")
     parts.append(str(node.data.get("instructions", "")))
+    if node.data.get("document_name"):
+        parts.append(
+            "Ở bước này thực hiện nhiệm vụ tài liệu được nêu trong hướng dẫn node; "
+            "không mặc định xử lý như một ticket fix bug. "
+            "Trả nội dung tài liệu Markdown đầy đủ trong câu trả lời. Hệ thống lưu tài liệu vào "
+            f"docs/tickets/{state['ticket_id']}/{node.data['document_name']}; không cần gọi tool ghi file."
+        )
+    parts.append(f"Tài liệu của ticket nằm trong docs/tickets/{state['ticket_id']}/ nếu đã được tạo.")
     parts.append(routing_instruction(str(node.data.get("routing", "none"))))
     return "\n\n".join(parts)
 

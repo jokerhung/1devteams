@@ -21,7 +21,7 @@ async def test_force_release_all_changes_without_leader_approval(engine_client):
         client.git("rev-parse", "HEAD").strip()
         == client.git("--git-dir", str(client.remote), "rev-parse", "main").strip()
     )
-    assert not client.factory.prompts["@leader"]
+    assert not client.factory.prompts["@devops"]
     head = client.git("rev-parse", "HEAD")
     assert (await client.post(f"/api/tickets/{tid}/force-release")).status_code == 202
     assert client.git("rev-parse", "HEAD") == head

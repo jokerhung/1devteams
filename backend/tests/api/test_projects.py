@@ -26,10 +26,10 @@ async def test_workspace_empty_project_and_effective_agents(client):
             f"/api/projects/{pid}/members", json={"member_type": "TEAM", "member_id": team["id"]}
         )
     ).status_code == 201
-    assert len((await client.get(f"/api/projects/{pid}/effective-agents")).json()) == 4
+    assert len((await client.get(f"/api/projects/{pid}/effective-agents")).json()) == 7
     aid = team["agent_ids"][0]
     await client.post(f"/api/projects/{pid}/members", json={"member_type": "AGENT", "member_id": aid})
-    assert len((await client.get(f"/api/projects/{pid}/effective-agents")).json()) == 4
+    assert len((await client.get(f"/api/projects/{pid}/effective-agents")).json()) == 7
     await client.delete(f"/api/projects/{pid}/members/TEAM/{team['id']}")
     assert [agent["id"] for agent in (await client.get(f"/api/projects/{pid}/effective-agents")).json()] == [
         aid

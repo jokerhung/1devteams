@@ -8,10 +8,12 @@ export function SidebarPalette({
   agents,
   onAdd,
   disabled,
+  agentLabel = "Agent trong project",
 }: {
   agents: Agent[];
   onAdd: (item: PaletteItem) => void;
   disabled?: boolean;
+  agentLabel?: string;
 }) {
   const item = (payload: PaletteItem, title: string, icon: React.ReactNode) => (
     <button
@@ -56,7 +58,7 @@ export function SidebarPalette({
         item({ type }, nodeTitles[type], <span>{nodeIcons[type]}</span>),
       )}
       <h2 className="pt-5 pb-2 text-[10px] font-bold text-stone-500">
-        AGENT TRONG PROJECT
+        {agentLabel}
       </h2>
       {agents
         .filter((a) => a.is_active)

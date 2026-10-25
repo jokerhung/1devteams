@@ -92,7 +92,7 @@ class TicketRunner:
                     "terminal_output",
                     output,
                     sender_type="AGENT",
-                    sender_name="@leader",
+                    sender_name="@devops",
                     metadata={"command": command},
                 )
 
@@ -535,7 +535,7 @@ class TicketRunner:
                 "log",
                 "Đang commit toàn bộ code và push theo yêu cầu người dùng.",
                 sender_type="AGENT",
-                sender_name="@leader",
+                sender_name="@devops",
             )
             async with self.sessions() as db:
                 await audit(db, "git.force_release_requested", tid, user_id=actor_id)
@@ -579,7 +579,7 @@ class TicketRunner:
                 "log",
                 f"Đã push commit {result['commit_hash']} và đóng ticket.",
                 sender_type="AGENT",
-                sender_name="@leader",
+                sender_name="@devops",
             )
         except asyncio.CancelledError:
             raise

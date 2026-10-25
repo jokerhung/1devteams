@@ -19,6 +19,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base, Entity, Timestamps, now
 
 
+class WorkflowTemplate(Entity, Base):
+    __tablename__ = "workflow_templates"
+    key: Mapped[str] = mapped_column(String(60), unique=True)
+    instructions: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
+    graph: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
 class User(Entity, Base):
     __tablename__ = "users"
     email: Mapped[str] = mapped_column(String(255), unique=True)

@@ -64,6 +64,19 @@ function mockApi(
     .spyOn(globalThis, "fetch")
     .mockImplementation(async (input, init) => {
       const path = String(input);
+      if (path.endsWith("/agents/native-options")) {
+        const { runtime } = JSON.parse(String(init?.body));
+        return new Response(
+          JSON.stringify({
+            models:
+              runtime === "codex"
+                ? [{ id: "codex-model", label: "Codex Model" }]
+                : [{ id: "sonnet", label: "Sonnet" }],
+            reasoning_levels: [],
+          }),
+          { status: 200 },
+        );
+      }
       const overridden = overrides(path, init);
       const data =
         overridden ??
@@ -108,7 +121,10 @@ test("AgentForm changes native models and enforces API text-only permissions and
   await user.type(screen.getByLabelText("Model", { exact: true }), "gpt-5");
   await user.click(screen.getByRole("button", { name: "Lưu Agent" }));
   expect(
-    fetch.mock.calls.filter(([, init]) => init?.method === "POST"),
+    fetch.mock.calls.filter(
+      ([input, init]) =>
+        String(input).endsWith("/agents") && init?.method === "POST",
+    ),
   ).toHaveLength(0);
 });
 test("editing unchanged agent locks handle, warns about active usage and avoids PATCH/restart", async () => {
@@ -314,7 +330,10 @@ test("notifications and sidebar count refetch when backend resolves notification
   resolved = true;
   await act(async () => {
     onmessage!({
-      data: JSON.stringify({ channel: "users/me", event_type: "notification_resolved" }),
+      data: JSON.stringify({
+        channel: "users/me",
+        event_type: "notification_resolved",
+      }),
     });
   });
   await screen.findByText("Không có gì cần xử lý 🎉");
@@ -328,7 +347,7 @@ test("notifications and sidebar count refetch when backend resolves notification
 test("API draft connection uses entered key and exposes discovered models and errors", async () => {
   let ok = true;
   const fetch = mockApi((path) =>
-    path.endsWith("/test-connection-draft")
+    path.endsWith("/test-connection-draft") || path.endsWith("/api-options")
       ? {
           ok,
           status: ok ? 200 : 401,
@@ -351,6 +370,12 @@ test("API draft connection uses entered key and exposes discovered models and er
   await user.type(screen.getByLabelText("Model", { exact: true }), "gpt-5");
   await user.click(screen.getByRole("button", { name: "Kiểm tra kết nối" }));
   await screen.findByText(/GET \/models 200 · 128 ms/);
+  await user.click(screen.getByRole("button", { name: "Tải model từ API" }));
+  await waitFor(() =>
+    expect(
+      document.querySelector('option[value="custom-model"]'),
+    ).toBeInTheDocument(),
+  );
   expect(
     document.querySelector('option[value="custom-model"]'),
   ).toBeInTheDocument();

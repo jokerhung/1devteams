@@ -113,7 +113,7 @@ async def test_release_filters_sensitive_and_unrelated_index(engine_client):
     (client.workspace / ".env").write_text("PRIVATE=hidden")
     (client.workspace / "unrelated.txt").write_text("user staged content")
     client.git("add", "unrelated.txt")
-    client.factory.scripts["@leader"].append(
+    client.factory.scripts["@devops"].append(
         "@@RELEASE\n"
         + json.dumps(
             {"approve": True, "files": [".env", "app.txt"], "commit_message": "repair app", "concerns": []}
@@ -127,7 +127,7 @@ async def test_release_filters_sensitive_and_unrelated_index(engine_client):
     await settled(client, tid, "COMPLETED")
     assert client.git("diff", "--name-only", "HEAD~1", "HEAD").strip() == "app.txt"
     assert client.git("diff", "--cached", "--name-only").strip() == "unrelated.txt"
-    assert "hidden" not in str(client.factory.prompts["@leader"])
+    assert "hidden" not in str(client.factory.prompts["@devops"])
 
 
 async def test_missing_marker_followup_and_fallback(engine_client):

@@ -20,7 +20,24 @@ PRESETS = {
 DEFAULT_TEAM = "Core Bugfix Squad"
 
 
+async def migrate_devops_agent(db) -> None:
+    """Rename the built-in agent in place so workflow/team references remain valid."""
+    agent = await db.scalar(select(Agent).where(Agent.is_builtin.is_(True), Agent.role_key == "LEADER"))
+    if agent is None or agent.handle != "@leader":
+        return
+    conflict = await db.scalar(select(Agent.id).where(Agent.handle == "@devops", Agent.id != agent.id))
+    if conflict:
+        raise ValueError("Cannot rename built-in @leader: @devops is already used by another agent")
+    agent.handle = "@devops"
+    agent.display_name = "DevOps (Git Release)"
+    agent.permission_profile = {**agent.permission_profile, "allow_terminal": True, "can_git_release": True}
+    agent.system_prompt = DEFAULT_SYSTEM_PROMPTS["LEADER"]
+    agent.config_version += 1
+    await db.flush()
+
+
 async def seed(db, settings) -> None:
+    await migrate_devops_agent(db)
     if not await db.scalar(select(func.count()).select_from(User)):
         if (
             settings.bootstrap_admin_email
@@ -40,9 +57,13 @@ async def seed(db, settings) -> None:
         ("@ba", "Business Analyst", "BA", "claude-code", "🐝", "sky", "read_only"),
         ("@developer", "Frontend Developer", "DEVELOPER", "claude-code", "🛠️", "amber", "developer"),
         ("@tester", "QA Tester", "TESTER", "codex", "🧪", "emerald", "tester"),
-        ("@leader", "Tech Lead (Git Release)", "LEADER", "claude-code", "🚀", "purple", "leader"),
+        ("@devops", "DevOps (Git Release)", "LEADER", "claude-code", "🚀", "purple", "leader"),
+        ("@leader", "Leader (Điều phối)", "COORDINATOR", "claude-code", "🧭", "sky", "read_only"),
+        ("@planner", "Implementation Planner", "PLANNER", "claude-code", "📋", "purple", "read_only"),
+        ("@designer", "UI/UX Designer", "DESIGNER", "claude-code", "🎨", "amber", "read_only"),
     ]
     agents = []
+    added_feature_agents = []
     for handle, display, role, runtime, icon, color, preset in defaults:
         agent = await db.scalar(select(Agent).where(Agent.handle == handle))
         if agent is None:
@@ -53,15 +74,24 @@ async def seed(db, settings) -> None:
                 runtime=runtime,
                 description="Gợi ý: chọn model nhanh cho BA/Tester."
                 if role in {"BA", "TESTER"}
-                else "Gợi ý: chọn model mạnh cho Developer/Leader.",
+                else "Gợi ý: chọn model mạnh cho Developer/DevOps.",
                 icon=icon,
                 color=color,
                 permission_profile=PRESETS[preset],
-                system_prompt=DEFAULT_SYSTEM_PROMPTS[role],
+                system_prompt=DEFAULT_SYSTEM_PROMPTS.get(
+                    role,
+                    (
+                        "Bạn làm việc theo hướng dẫn của node workflow. "
+                        "Đọc mã nguồn và tài liệu để xác minh. "
+                        "Không tự commit/push."
+                    ),
+                ),
                 is_builtin=True,
             )
             db.add(agent)
             await db.flush()
+            if role in {"COORDINATOR", "PLANNER", "DESIGNER"}:
+                added_feature_agents.append(agent)
         agents.append(agent)
     team = await db.scalar(select(Team).where(Team.name == DEFAULT_TEAM))
     if team is None:
@@ -71,10 +101,17 @@ async def seed(db, settings) -> None:
         db.add_all(
             [TeamAgent(team_id=team.id, agent_id=agent.id, position=i) for i, agent in enumerate(agents)]
         )
+    else:
+        for i, agent in enumerate(added_feature_agents, start=4):
+            db.add(TeamAgent(team_id=team.id, agent_id=agent.id, position=i))
     await db.commit()
 
 
 def template_graph(name: str, agents: list[Agent]) -> Graph:
+    if name == "add_feature":
+        from app.services.workflow_templates import feature_graph
+
+        return feature_graph(agents)
     if name == "blank":
         return Graph.model_validate(
             {

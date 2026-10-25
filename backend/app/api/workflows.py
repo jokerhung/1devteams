@@ -1,10 +1,11 @@
 from uuid import UUID
 
 from fastapi import APIRouter
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 
-from app.core.deps import DB, CurrentUser, fail, record, require_project
-from app.db.models import Agent, Ticket, Workflow, WorkflowVersion
+from app.core.deps import DB, Admin, CurrentUser, fail, record, require_project
+from app.db.models import Agent, Ticket, Workflow, WorkflowTemplate, WorkflowVersion
 from app.schemas.common import Success
 from app.schemas.workflow import (
     Graph,
@@ -19,6 +20,7 @@ from app.services.common import commit, fields, patch_values
 from app.services.project_service import effective_agents
 from app.services.seed import template_graph
 from app.services.workflow_service import has_tickets, protect_last_workflow, publish, revalidate
+from app.services.workflow_templates import configured_graph
 from app.services.workflow_validator import validate_graph
 
 router = APIRouter(tags=["Workflows"])
@@ -33,16 +35,56 @@ async def authorized_workflow(db, wid, user, write=False):
 
 
 @router.get("/workflow-templates")
-async def templates(db: DB, user: CurrentUser) -> list[dict]:
-    agents = list((await db.scalars(select(Agent).where(Agent.is_builtin.is_(True)))).all())
+async def templates(db: DB, user: CurrentUser, project_id: UUID | None = None) -> list[dict]:
+    if project_id:
+        await require_project(db, str(project_id), user)
+        agents = await effective_agents(db, str(project_id))
+    else:
+        agents = list((await db.scalars(select(Agent))).all())
     return [
-        {"id": key, "name": name, "graph": template_graph(key, agents).model_dump()}
+        {"id": key, "name": name, "graph": (await configured_graph(db, key, agents)).model_dump()}
         for key, name in [
             ("blank", "Trống"),
             ("bugfix_default", "Fix Bug"),
+            ("add_feature", "Add feature"),
             ("bugfix_with_security_review", "Fix Bug + Security Review"),
         ]
     ]
+
+
+class TemplateInstructions(BaseModel):
+    instructions: dict[str, str] = Field(default_factory=dict, max_length=30)
+    graph: Graph | None = None
+
+
+@router.put("/workflow-templates/{key}")
+async def save_template(key: str, body: TemplateInstructions, db: DB, user: Admin):
+    if key not in {"bugfix_default", "add_feature", "bugfix_with_security_review"}:
+        fail(404, "Không tìm thấy template")
+    agents = list((await db.scalars(select(Agent))).all())
+    graph = body.graph or template_graph(key, [])
+    if body.graph:
+        errors = validate_graph(graph, agents)
+        if errors:
+            fail(422, "; ".join(errors))
+        roles = {agent.id: agent.role_key for agent in agents}
+        handles = {agent.id: agent.handle for agent in agents}
+        for node in graph.nodes:
+            if node.type in {"agent", "git_release"}:
+                node.data["agent_role"] = roles.get(str(node.data.get("agent_id", "")))
+                node.data["agent_handle"] = handles.get(str(node.data.get("agent_id", "")))
+    permitted = {node.id for node in graph.nodes if node.type in {"agent", "git_release"}}
+    if set(body.instructions) - permitted or any(len(text) > 20000 for text in body.instructions.values()):
+        fail(422, "Hướng dẫn template không hợp lệ")
+    config = await db.scalar(select(WorkflowTemplate).where(WorkflowTemplate.key == key))
+    if config is None:
+        config = WorkflowTemplate(key=key)
+        db.add(config)
+    config.instructions = body.instructions
+    if body.graph:
+        config.graph = graph.model_dump()
+    await commit(db)
+    return {"ok": True}
 
 
 @router.get("/projects/{pid}/workflows", response_model=list[WorkflowOut])
@@ -71,7 +113,7 @@ async def list_workflows(pid: UUID, db: DB, user: CurrentUser, include_archived:
 @router.post("/projects/{pid}/workflows", response_model=WorkflowOut, status_code=201)
 async def create_workflow(pid: UUID, body: WorkflowCreate, db: DB, user: CurrentUser):
     await require_project(db, str(pid), user, write=True)
-    graph = template_graph(body.template, await effective_agents(db, str(pid)))
+    graph = await configured_graph(db, body.template, await effective_agents(db, str(pid)))
     entity = Workflow(project_id=str(pid), **body.model_dump(exclude={"template"}), graph=graph.model_dump())
     await revalidate(db, entity)
     db.add(entity)

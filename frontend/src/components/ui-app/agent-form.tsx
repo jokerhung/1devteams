@@ -440,7 +440,7 @@ export function AgentForm({
             </option>
             {agent?.is_builtin && (
               <option value="leader" disabled={custom}>
-                Preset Leader
+                DevOps · Git Release
               </option>
             )}
             <option value="custom">Tuỳ chỉnh</option>

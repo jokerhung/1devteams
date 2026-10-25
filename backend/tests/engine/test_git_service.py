@@ -39,6 +39,6 @@ async def test_git_rejects_detached_unsafe_options_and_symlink(engine_client):
 )
 def test_no_profile_can_grant_llm_git_release(tmp_path, command):
     guard = DynamicPermissionGuard(
-        PermissionProfile(allow_terminal=True, can_git_release=True, blocked_commands=[]), tmp_path, "@leader"
+        PermissionProfile(allow_terminal=True, can_git_release=True, blocked_commands=[]), tmp_path, "@devops"
     )
     assert not guard.check_command(command).allowed

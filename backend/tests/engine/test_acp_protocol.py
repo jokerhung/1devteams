@@ -52,7 +52,7 @@ async def test_full_workflow_with_executable_acp_peer_and_image(engine_client, t
             text = "Fixed app.txt"
         if cfg.handle == "@tester":
             text = "PASS\n@@ROUTE: pass"
-        if cfg.handle == "@leader":
+        if cfg.handle == "@devops":
             text = (
                 '@@RELEASE\n{"approve":true,"files":["app.txt"],'
                 '"commit_message":"fix: ACP repair","concerns":[]}\n@@END'

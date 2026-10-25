@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 from sqlalchemy import select
 
 from app.db.models import Agent
-from app.services.seed import seed
+from app.services.seed import migrate_devops_agent, seed
 
 
 async def test_create_handle_and_builtin(client):
@@ -73,9 +73,9 @@ async def test_seed_is_idempotent(client):
     async with client.app.state.db_session() as db:
         await seed(db, client.app.state.settings)
         await seed(db, client.app.state.settings)
-        assert len((await db.scalars(select(Agent))).all()) == 4
+        assert len((await db.scalars(select(Agent))).all()) == 7
     teams = (await client.get("/api/teams")).json()
-    assert len(teams) == 1 and len(teams[0]["agent_ids"]) == 4
+    assert len(teams) == 1 and len(teams[0]["agent_ids"]) == 7
     assert (await client.get("/api/projects")).json()["total"] == 0
 
 
@@ -88,6 +88,39 @@ async def test_catalog_and_presets(client):
         for item in (await client.get("/api/agents/models-catalog")).json()["codex"]
     )
     assert (await client.get("/api/agents/permission-presets")).json()["leader"]["can_git_release"]
+
+
+async def test_devops_migration_preserves_identity_and_runtime(client):
+    agents = (await client.get("/api/agents")).json()
+    devops = next(agent for agent in agents if agent["handle"] == "@devops")
+    assert devops["display_name"] == "DevOps (Git Release)"
+    assert devops["permission_profile"]["can_git_release"]
+    teams_before = (await client.get("/api/teams")).json()
+    async with client.app.state.db_session() as db:
+        coordinator = await db.scalar(select(Agent).where(Agent.role_key == "COORDINATOR"))
+        coordinator.handle = "@coordinator_legacy"
+        await db.flush()
+        agent = await db.get(Agent, devops["id"])
+        agent.handle = "@leader"
+        agent.display_name = "Tech Lead (Git Release)"
+        agent.model = "custom-release-model"
+        agent.system_prompt = "Legacy release prompt"
+        await db.commit()
+        original_version = agent.config_version
+        await migrate_devops_agent(db)
+        await db.refresh(agent)
+        assert agent.handle == "@devops"
+        assert agent.display_name == "DevOps (Git Release)"
+        assert agent.model == "custom-release-model"
+        assert agent.config_version == original_version + 1
+        assert "@@RELEASE" in agent.system_prompt
+        await migrate_devops_agent(db)
+        assert agent.config_version == original_version + 1
+        coordinator.handle = "@leader"
+        await db.commit()
+        await seed(db, client.app.state.settings)
+        assert len((await db.scalars(select(Agent))).all()) == len(agents)
+    assert (await client.get("/api/teams")).json() == teams_before
 
 
 async def test_concurrent_edits_increment_each_version(client):

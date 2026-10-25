@@ -51,7 +51,7 @@ class ScriptedSession:
                 else {
                     "@ba": "STR ready\n@@ROUTE: ready",
                     "@tester": "Tests pass\n@@ROUTE: pass",
-                    "@leader": "@@RELEASE\n"
+                    "@devops": "@@RELEASE\n"
                     + json.dumps(
                         {
                             "approve": True,

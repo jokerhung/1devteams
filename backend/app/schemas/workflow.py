@@ -34,7 +34,7 @@ class WorkflowCreate(Input):
     name: Name
     ticket_prefix: str = Field(pattern=r"^[A-Z]{2,10}$")
     description: str = ""
-    template: Literal["blank", "bugfix_default", "bugfix_with_security_review"] = "blank"
+    template: Literal["blank", "bugfix_default", "bugfix_with_security_review", "add_feature"] = "blank"
     icon: str = Field(default="🐛", max_length=8)
     color: str = Field(default="sky", max_length=20)
 

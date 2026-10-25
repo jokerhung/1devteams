@@ -1,10 +1,12 @@
 import type { Agent } from "@/lib/types";
+import { apiFetch } from "@/lib/api";
 import { deserialize, type WorkflowGraph, type NodeKind } from "./serialize";
 import { autoLayout } from "./layout";
 import { serialize } from "./serialize";
 export const templateOptions = [
   { id: "blank", name: "Trống" },
   { id: "bugfix_default", name: "Fix Bug mặc định" },
+  { id: "add_feature", name: "Add feature" },
   { id: "bugfix_with_security_review", name: "Fix Bug + Security Review" },
 ] as const;
 export type TemplateId = (typeof templateOptions)[number]["id"];
@@ -25,14 +27,33 @@ export function missingRoles(template: TemplateId, agents: Agent[]) {
           "DEVELOPER",
           "TESTER",
           "LEADER",
+          ...(template === "add_feature"
+            ? ["COORDINATOR", "DESIGNER", "PLANNER"]
+            : []),
           ...(template === "bugfix_with_security_review" ? ["SECURITY"] : []),
         ]
   ).filter((role) => !roleAgent(agents, role));
+}
+export async function loadTemplateGraph(
+  template: TemplateId,
+  projectId: string,
+): Promise<WorkflowGraph> {
+  const templates = await apiFetch<{ id: string; graph: WorkflowGraph }[]>(
+    `/workflow-templates?project_id=${projectId}`,
+  );
+  const entry = templates.find((item) => item.id === template);
+  if (!entry) throw new Error("Không tìm thấy template");
+  return serialize(autoLayout(deserialize(entry.graph)));
 }
 export function templateGraph(
   template: TemplateId,
   agents: Agent[],
 ): WorkflowGraph {
+  if (template === "add_feature") {
+    throw new Error(
+      "Add feature cần tải định nghĩa từ API bằng loadTemplateGraph",
+    );
+  }
   const specs: [string, NodeKind, Record<string, unknown>][] =
     template === "blank"
       ? [
