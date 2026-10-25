@@ -12,10 +12,21 @@ import {
   Plus,
   GitBranch,
   LogOut,
+  Settings2,
   Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   X,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { toast } from "sonner";
 import { keys } from "@/lib/query-keys";
 import { allProjects } from "@/lib/projects";
 import type { Agent, Team, Project, ProjectTree, User } from "@/lib/types";
@@ -23,6 +34,7 @@ import { useRealtime } from "@/lib/realtime";
 import { Modal, StatusBadge, UserAvatar, ErrorState } from "./primitives";
 import { ProjectDialog } from "./project-dialog";
 import { CreateTicketDialog } from "./ticket-dialog";
+import { AppBrand } from "./app-brand";
 export function recentProjects(projects: Project[], currentId?: string) {
   const sorted = [...projects].sort(
     (a, b) =>
@@ -219,6 +231,9 @@ export function Sidebar() {
   const [mobile, setMobile] = useState(false);
   const [create, setCreate] = useState(false);
   const [all, setAll] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [collapsed, setCollapsed] = useOpen("sidebar.collapsed");
+  const compact = collapsed && !mobile;
   const projects = useQuery({
     queryKey: [...keys.projects, "list"],
     queryFn: allProjects,
@@ -270,23 +285,41 @@ export function Sidebar() {
       )}
       <aside
         aria-label="Sidebar"
-        className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col bg-[#EBE9D8] px-2.5 py-4 text-[13px] lg:static lg:z-auto lg:h-full lg:py-1 ${mobile ? "flex" : "hidden lg:flex"}`}
+        className={`fixed inset-y-0 left-0 z-40 flex shrink-0 flex-col bg-[#EBE9D8] px-2.5 py-4 text-[13px] lg:static lg:z-auto lg:h-full lg:py-1 ${compact ? "w-16" : "w-60"} ${mobile ? "flex" : "hidden lg:flex"}`}
       >
-        <div className="mb-5 flex items-center justify-between px-2 pt-1">
-          <div className="flex gap-1.5">
-            <span className="size-3 rounded-full border border-black/10 bg-[#FF5F56]" />
-            <span className="size-3 rounded-full border border-black/10 bg-[#FFBD2E]" />
-            <span className="size-3 rounded-full border border-black/10 bg-[#27C93F]" />
-          </div>
-          <span
-            title={`Claude: ${health.data?.acp.claude ? "OK" : "lỗi"} · Codex: ${health.data?.acp.codex ? "OK" : "lỗi"}`}
-            className="flex items-center gap-1 font-mono text-[10px] text-stone-500"
+        <div
+          className={`mb-5 flex gap-2 pt-1 ${compact ? "flex-col items-center" : "items-center justify-between px-1"}`}
+        >
+          <Link
+            href="/"
+            aria-label="aiteams · Trang chủ"
+            onClick={() => setMobile(false)}
+            className="flex min-w-0 items-center gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-stone-400"
           >
             <span
-              className={`size-1.5 rounded-full ${connected ? "bg-emerald-500" : "bg-amber-500"}`}
-            />
-            {connected ? "ACP Connected" : "ACP lỗi"}
-          </span>
+              className="relative flex shrink-0 items-center"
+              title={`Claude: ${health.data?.acp.claude ? "OK" : "lỗi"} · Codex: ${health.data?.acp.codex ? "OK" : "lỗi"}`}
+            >
+              <AppBrand compact={compact} />
+              <span
+                className={`absolute -bottom-0.5 left-[34px] size-2 rounded-full border border-[#EBE9D8] ${connected ? "bg-emerald-500" : "bg-amber-500"}`}
+              />
+            </span>
+          </Link>
+          <button
+            type="button"
+            className="hidden size-8 shrink-0 items-center justify-center rounded-lg text-stone-500 hover:bg-[#DFDDD0] focus-visible:ring-2 focus-visible:ring-stone-400 lg:flex"
+            aria-label={compact ? "Mở rộng sidebar" : "Thu gọn sidebar"}
+            title={compact ? "Mở rộng sidebar" : "Thu gọn sidebar"}
+            aria-expanded={!compact}
+            onClick={() => setCollapsed(!collapsed)}
+          >
+            {compact ? (
+              <PanelLeftOpen size={17} aria-hidden="true" />
+            ) : (
+              <PanelLeftClose size={17} aria-hidden="true" />
+            )}
+          </button>
           <button
             className="lg:hidden"
             aria-label="Đóng sidebar"
@@ -298,12 +331,13 @@ export function Sidebar() {
         <nav className="space-y-0.5">
           <Link
             onClick={() => setMobile(false)}
-            className={`side-item ${pathname === "/notifications" ? "active" : ""}`}
+            className={`side-item ${compact ? "justify-center !px-0" : ""} ${pathname === "/notifications" ? "active" : ""}`}
+            title={compact ? "Thông báo" : undefined}
             href="/notifications"
           >
             <Bell size={16} />
-            Thông báo
-            {!!count.data?.open && (
+            <span className={compact ? "sr-only" : undefined}>Thông báo</span>
+            {!compact && !!count.data?.open && (
               <span className="ml-auto rounded-full bg-stone-800 px-1.5 font-mono text-[10px] text-white">
                 {count.data.open}
               </span>
@@ -311,81 +345,169 @@ export function Sidebar() {
           </Link>
           <Link
             onClick={() => setMobile(false)}
-            className={`side-item ${pathname === "/agents" ? "active" : ""}`}
+            className={`side-item ${compact ? "justify-center !px-0" : ""} ${pathname === "/agents" ? "active" : ""}`}
+            title={compact ? "Agents & Teams" : undefined}
             href="/agents"
           >
             <Bot size={16} />
-            Agents & Teams
-            <span className="ml-auto font-mono text-[10px] text-stone-500">
+            <span className={compact ? "sr-only" : undefined}>
+              Agents & Teams
+            </span>
+            <span
+              className={
+                compact
+                  ? "hidden"
+                  : "ml-auto font-mono text-[10px] text-stone-500"
+              }
+            >
               {agents.data?.length || 0} · {teams.data?.length || 0}
             </span>
           </Link>
         </nav>
-        <div className="mt-5 flex items-center justify-between px-2 pb-2 text-[11px] font-semibold text-stone-500">
-          <span>Projects</span>
-          <button aria-label="Tạo project mới" onClick={() => setCreate(true)}>
-            <Plus size={15} />
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
-          <ErrorState error={projects.error} />
-          {recentProjects(projects.data?.items || [], currentId).map(
-            (project) => (
-              <ProjectItem
-                key={project.id}
-                project={project}
-                current={currentId === project.id}
-                onNavigate={() => setMobile(false)}
-              />
-            ),
-          )}
-          {(projects.data?.total || 0) > 5 && (
+        {compact ? (
+          <div className="mt-5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
             <button
-              className="side-item w-full text-xs text-stone-500"
-              onClick={() => setAll(true)}
-            >
-              Xem tất cả ({projects.data?.total})
-            </button>
-          )}
-          {projects.data?.total === 0 && (
-            <button
-              className="side-item text-xs text-stone-500"
+              type="button"
+              className="side-item justify-center !px-0"
+              aria-label="Tạo project mới"
+              title="Tạo project mới"
               onClick={() => setCreate(true)}
             >
-              + Tạo project đầu tiên
+              <Plus size={16} aria-hidden="true" />
             </button>
-          )}
-        </div>
-        {me.data && ["OWNER", "ADMIN"].includes(me.data.system_role) && (
-          <Link className="side-item mt-3" href="/settings/adapters">
-            Settings
-          </Link>
-        )}
-        <div className="mt-4 flex items-center gap-2 rounded-xl p-2 hover:bg-[#DFDDD0]/60">
-          <UserAvatar name={me.data?.display_name || "?"} />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-semibold">
-              {me.data?.display_name}
-            </p>
-            <p
-              className="truncate font-mono text-[10px] text-stone-500"
-              title={current?.workspace_path}
+            {recentProjects(projects.data?.items || [], currentId).map(
+              (project) => (
+                <Link
+                  key={project.id}
+                  href={`/projects/${project.id}`}
+                  aria-label={project.name}
+                  title={project.name}
+                  className={`side-item justify-center !px-0 ${currentId === project.id ? "active" : ""}`}
+                >
+                  <Folder size={17} aria-hidden="true" />
+                </Link>
+              ),
+            )}
+            <button
+              type="button"
+              className="side-item justify-center !px-0"
+              aria-label="Tất cả projects"
+              title="Tất cả projects"
+              onClick={() => setAll(true)}
             >
-              {current?.workspace_path || "Workspace của bạn"}
-            </p>
+              <Menu size={16} aria-hidden="true" />
+            </button>
           </div>
-          <button
-            aria-label="Đăng xuất"
-            title="Đăng xuất"
-            onClick={async () => {
-              await fetch("/api/auth/logout", { method: "POST" });
-              router.replace("/login");
-              router.refresh();
-            }}
+        ) : (
+          <>
+            <div className="mt-5 flex items-center justify-between px-2 pb-2 text-[11px] font-semibold text-stone-500">
+              <span>Projects</span>
+              <button
+                aria-label="Tạo project mới"
+                onClick={() => setCreate(true)}
+              >
+                <Plus size={15} />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+              <ErrorState error={projects.error} />
+              {recentProjects(projects.data?.items || [], currentId).map(
+                (project) => (
+                  <ProjectItem
+                    key={project.id}
+                    project={project}
+                    current={currentId === project.id}
+                    onNavigate={() => setMobile(false)}
+                  />
+                ),
+              )}
+              {(projects.data?.total || 0) > 5 && (
+                <button
+                  className="side-item w-full text-xs text-stone-500"
+                  onClick={() => setAll(true)}
+                >
+                  Xem tất cả ({projects.data?.total})
+                </button>
+              )}
+              {projects.data?.total === 0 && (
+                <button
+                  className="side-item text-xs text-stone-500"
+                  onClick={() => setCreate(true)}
+                >
+                  + Tạo project đầu tiên
+                </button>
+              )}
+            </div>
+          </>
+        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            type="button"
+            aria-label={`Menu tài khoản ${me.data?.display_name || ""}`}
+            disabled={!me.data || loggingOut}
+            title={compact ? me.data?.display_name : undefined}
+            className={`mt-4 flex w-full items-center gap-2 rounded-xl text-left outline-none hover:bg-[#DFDDD0]/60 focus-visible:ring-2 focus-visible:ring-stone-400 data-popup-open:bg-[#DFDDD0]/60 ${compact ? "justify-center p-1.5" : "p-2"}`}
           >
-            <LogOut size={14} />
-          </button>
-        </div>
+            <UserAvatar name={me.data?.display_name || "?"} />
+            <span className={compact ? "hidden" : "min-w-0 flex-1"}>
+              <span className="block truncate text-xs font-semibold">
+                {me.data?.display_name}
+              </span>
+              <span
+                className="block truncate font-mono text-[10px] text-stone-500"
+                title={current?.workspace_path}
+              >
+                {current?.workspace_path || "Workspace của bạn"}
+              </span>
+            </span>
+            <ChevronDown
+              size={14}
+              aria-hidden="true"
+              className={compact ? "hidden" : "shrink-0 text-stone-500"}
+            />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="top" align="start" className="w-56">
+            {me.data && ["OWNER", "ADMIN"].includes(me.data.system_role) && (
+              <>
+                <DropdownMenuItem
+                  className="min-h-10 gap-2"
+                  render={
+                    <Link
+                      href="/settings/adapters"
+                      onClick={() => setMobile(false)}
+                    />
+                  }
+                >
+                  <Settings2 size={16} aria-hidden="true" /> Settings
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
+            <DropdownMenuItem
+              className="min-h-10 gap-2"
+              variant="destructive"
+              disabled={loggingOut}
+              onClick={async () => {
+                if (loggingOut) return;
+                setLoggingOut(true);
+                try {
+                  const response = await fetch("/api/auth/logout", {
+                    method: "POST",
+                  });
+                  if (!response.ok)
+                    throw new Error("Không đăng xuất được. Vui lòng thử lại.");
+                  router.replace("/login");
+                  router.refresh();
+                } catch (error) {
+                  toast.error((error as Error).message);
+                  setLoggingOut(false);
+                }
+              }}
+            >
+              <LogOut size={16} aria-hidden="true" /> Đăng xuất
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </aside>
       {create && <ProjectDialog onClose={() => setCreate(false)} />}{" "}
       {all && (

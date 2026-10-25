@@ -12,7 +12,7 @@ const mono = JetBrains_Mono({
   variable: "--font-jetbrains",
 });
 export const metadata: Metadata = {
-  title: "aiTeams — Multi-Agent Workspace",
+  title: "aiteams — Multi-Agent Workspace",
   description: "Quản lý AI Agent, Team và dự án trong workspace của bạn.",
 };
 export default function RootLayout({

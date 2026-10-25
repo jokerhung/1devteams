@@ -1,104 +1,137 @@
 "use client";
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Check, CircleDashed, RefreshCw, Terminal } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 
 type Versions = Record<
   string,
   { version: string | null; installed: boolean; latest?: string | null }
 >;
-type Metrics = {
-  tickets: Record<string, number>;
-  guard_denies: number;
-  node_average_seconds: Record<string, number>;
-};
+
 export default function AdaptersPage() {
-  const [versions, setVersions] = useState<Versions>({});
-  const [metrics, setMetrics] = useState<Metrics>();
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  async function load(check = false) {
-    setBusy(true);
-    setError("");
+  const [checking, setChecking] = useState(false);
+  const [checkError, setCheckError] = useState("");
+  const versions = useQuery({
+    queryKey: ["settings", "adapters"],
+    queryFn: ({ signal }) =>
+      apiFetch<Versions>("/settings/adapters", { signal }),
+    staleTime: 60_000,
+  });
+  const [updates, setUpdates] = useState<Versions | null>(null);
+  async function checkUpdates() {
+    setChecking(true);
+    setCheckError("");
     try {
-      const [v, m] = await Promise.all([
-        apiFetch<Versions>(`/settings/adapters?check_updates=${check}`),
-        apiFetch<Metrics>("/metrics"),
-      ]);
-      setVersions(v);
-      setMetrics(m);
-    } catch (e) {
-      setError((e as Error).message);
+      setUpdates(
+        await apiFetch<Versions>("/settings/adapters?check_updates=true"),
+      );
+    } catch (error) {
+      setCheckError((error as Error).message);
     } finally {
-      setBusy(false);
+      setChecking(false);
     }
   }
-  useEffect(() => {
-    void load();
-  }, []);
+  const data = updates || versions.data;
   return (
-    <section>
-      <h1 className="text-xl font-semibold">Adapter & vận hành</h1>
-      <Link className="btn btn-light my-3" href="/settings/audit">
-        Nhật ký audit
-      </Link>
-      {error && (
-        <p role="alert" className="error">
-          {error}
+    <section className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold">Adapter đã cài đặt</h2>
+          <p className="mt-1 text-sm text-stone-500">
+            Phiên bản CLI và cầu nối ACP trên máy chủ.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="btn btn-light gap-2"
+          disabled={checking || versions.isPending}
+          onClick={() => void checkUpdates()}
+        >
+          <RefreshCw
+            size={14}
+            className={checking ? "animate-spin" : ""}
+            aria-hidden="true"
+          />
+          {checking ? "Đang kiểm tra…" : "Kiểm tra cập nhật"}
+        </button>
+      </div>
+      {(versions.error || checkError) && (
+        <p
+          role="alert"
+          className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+        >
+          {checkError || versions.error?.message}
         </p>
       )}
-      <button
-        className="btn btn-dark ml-2"
-        disabled={busy}
-        onClick={() => void load(true)}
-      >
-        {busy ? "Đang kiểm tra…" : "Kiểm tra cập nhật"}
-      </button>
-      <table className="my-4 w-full text-left text-sm">
-        <thead>
-          <tr>
-            <th>Adapter</th>
-            <th>Đã cài</th>
-            <th>Version local</th>
-            <th>Mới nhất</th>
-          </tr>
-        </thead>
-        <tbody>
-          {Object.entries(versions).map(([name, value]) => (
-            <tr key={name} className="border-t">
-              <td className="py-3 font-mono">{name}</td>
-              <td>{value.installed ? "Có" : "Chưa"}</td>
-              <td>{value.version || "Không xác định"}</td>
-              <td>{value.latest || "—"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="text-xs text-stone-500">
-        Kiểm tra version trên npm; cập nhật adapter bằng quy trình cài đặt sau
-        khi dừng ứng dụng.
-      </p>
-      {metrics && (
-        <div className="mt-6 space-y-3">
-          <h2 className="font-semibold">Thống kê</h2>
-          <p>Số lần Guard từ chối: {metrics.guard_denies}</p>
-          <div className="flex flex-wrap gap-4">
-            {Object.entries(metrics.tickets).map(([status, count]) => (
-              <span key={status}>
-                {status}: <b>{count}</b>
-              </span>
-            ))}
-          </div>
-          <h3>Thời gian trung bình mỗi node</h3>
-          {Object.entries(metrics.node_average_seconds).map(
-            ([node, seconds]) => (
-              <p key={node}>
-                {node}: {seconds.toFixed(1)}s
-              </p>
-            ),
-          )}
+      <div className="overflow-hidden rounded-xl border border-stone-200">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[560px] text-left text-sm">
+            <thead className="border-b border-stone-200 bg-stone-50 text-xs text-stone-500">
+              <tr>
+                {["Adapter", "Trạng thái", "Phiên bản local", "Mới nhất"].map(
+                  (label) => (
+                    <th key={label} className="px-5 py-3 font-medium">
+                      {label}
+                    </th>
+                  ),
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-100">
+              {Object.entries(data || {}).map(([name, value]) => (
+                <tr key={name} className="bg-white">
+                  <td className="px-5 py-4">
+                    <span className="flex items-center gap-3">
+                      <Terminal
+                        size={17}
+                        className="text-stone-400"
+                        aria-hidden="true"
+                      />
+                      <span className="font-mono text-xs font-medium">
+                        {name}
+                      </span>
+                    </span>
+                  </td>
+                  <td className="px-5 py-4">
+                    <span
+                      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-1 text-xs ${value.installed ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-500"}`}
+                    >
+                      {value.installed ? (
+                        <Check size={12} aria-hidden="true" />
+                      ) : (
+                        <CircleDashed size={12} aria-hidden="true" />
+                      )}
+                      {value.installed ? "Đã cài" : "Chưa cài"}
+                    </span>
+                  </td>
+                  <td className="px-5 py-4 font-mono text-xs">
+                    {value.version || "—"}
+                  </td>
+                  <td className="px-5 py-4 font-mono text-xs">
+                    {value.latest || "—"}
+                  </td>
+                </tr>
+              ))}
+              {versions.isPending && (
+                <tr>
+                  <td
+                    colSpan={4}
+                    role="status"
+                    className="p-6 text-center text-stone-500"
+                  >
+                    Đang tải adapter…
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
-      )}
+        <p className="border-t border-stone-200 bg-stone-50/60 px-5 py-3 text-xs leading-5 text-stone-500">
+          Kiểm tra phiên bản mới nhất từ npm. Để cập nhật adapter, dừng ứng dụng
+          rồi chạy quy trình cài đặt.
+        </p>
+      </div>
     </section>
   );
 }

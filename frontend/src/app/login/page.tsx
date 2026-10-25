@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { AppBrand } from "@/components/ui-app/app-brand";
 export default function LoginPage() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -10,8 +11,8 @@ export default function LoginPage() {
     <main className="flex min-h-dvh items-center justify-center p-6">
       <section className="w-full max-w-sm rounded-2xl border border-stone-300 bg-white p-8 shadow-sm">
         <div className="mb-7">
-          <span className="text-3xl">🐝</span>
-          <h1 className="mt-3 text-xl font-bold">Chào mừng đến aiTeams</h1>
+          <AppBrand />
+          <h1 className="mt-3 text-xl font-bold">Chào mừng đến aiteams</h1>
           <p className="mt-2 text-xs text-stone-500">
             Đăng nhập để mở workspace của bạn.
           </p>
