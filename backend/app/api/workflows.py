@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 
@@ -19,6 +19,7 @@ from app.schemas.workflow import (
 from app.services.common import commit, fields, patch_values
 from app.services.project_service import effective_agents
 from app.services.seed import template_graph
+from app.services.workflow_assistant import AssistantRequest, AssistantResponse, chat
 from app.services.workflow_service import has_tickets, protect_last_workflow, publish, revalidate
 from app.services.workflow_templates import configured_graph
 from app.services.workflow_validator import validate_graph
@@ -32,6 +33,22 @@ async def authorized_workflow(db, wid, user, write=False):
     if write:
         await db.refresh(workflow)
     return workflow
+
+
+@router.post("/workflows/{wid}/assistant", response_model=AssistantResponse)
+async def workflow_assistant(wid: UUID, body: AssistantRequest, db: DB, user: CurrentUser, request: Request):
+    workflow = await authorized_workflow(db, wid, user, write=True)
+    if workflow.status == "ARCHIVED":
+        fail(409, "Workflow đã archived")
+    return await chat(body, await effective_agents(db, workflow.project_id), db, request)
+
+
+@router.post("/workflow-templates/{key}/assistant", response_model=AssistantResponse)
+async def template_assistant(key: str, body: AssistantRequest, db: DB, user: Admin, request: Request):
+    if key not in {"bugfix_default", "add_feature", "bugfix_with_security_review"}:
+        fail(404, "Không tìm thấy template")
+    agents = list((await db.scalars(select(Agent))).all())
+    return await chat(body, agents, db, request)
 
 
 @router.get("/workflow-templates")

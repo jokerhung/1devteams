@@ -29,7 +29,8 @@ try {
     $env:BACKEND_URL = $env:NEXT_PUBLIC_API_URL
     $env:CORS_ORIGINS = "http://localhost:$($config.FRONTEND_PORT),http://127.0.0.1:$($config.FRONTEND_PORT)"
     $processes += Start-Process $pythonPath -ArgumentList '-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', $config.BACKEND_PORT -WorkingDirectory $backendRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $logRoot 'production-backend.log') -RedirectStandardError (Join-Path $logRoot 'production-backend.error.log') -PassThru
-    $processes += Start-Process (Get-Command node).Source -ArgumentList "`"$nextPath`"", 'start', '--hostname', '127.0.0.1', '--port', $config.FRONTEND_PORT -WorkingDirectory $frontendRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $logRoot 'production-frontend.log') -RedirectStandardError (Join-Path $logRoot 'production-frontend.error.log') -PassThru
+    # Listen on LAN IPv4 as well as loopback. Tailscale Serve targets 127.0.0.1.
+    $processes += Start-Process (Get-Command node).Source -ArgumentList "`"$nextPath`"", 'start', '--hostname', '0.0.0.0', '--port', $config.FRONTEND_PORT -WorkingDirectory $frontendRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $logRoot 'production-frontend.log') -RedirectStandardError (Join-Path $logRoot 'production-frontend.error.log') -PassThru
     Write-Host "Frontend: http://localhost:$($config.FRONTEND_PORT) | Backend: http://127.0.0.1:$($config.BACKEND_PORT)"
     $deadline = (Get-Date).AddSeconds(90)
     while ($true) {

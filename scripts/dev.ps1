@@ -87,7 +87,8 @@ try {
     $env:NEXT_PUBLIC_API_URL = $backendUrl
     $env:CORS_ORIGINS = (@($config.cors -split ',') + @($frontendUrl) | Where-Object { $_ } | Select-Object -Unique) -join ','
     $processes += Start-Process -FilePath $pythonPath -ArgumentList '-u', '-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', $backendPort -WorkingDirectory $backendRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $logRoot 'backend.stdout.log') -RedirectStandardError (Join-Path $logRoot 'backend.stderr.log') -PassThru
-    $processes += Start-Process -FilePath $nodePath -ArgumentList "`"$nextPath`"", 'dev', '--turbopack', '--hostname', 'localhost', '--port', $frontendPort -WorkingDirectory $frontendRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $logRoot 'frontend.stdout.log') -RedirectStandardError (Join-Path $logRoot 'frontend.stderr.log') -PassThru
+    # Listen on LAN IPv4 as well as loopback. Tailscale Serve targets 127.0.0.1.
+    $processes += Start-Process -FilePath $nodePath -ArgumentList "`"$nextPath`"", 'dev', '--turbopack', '--hostname', '0.0.0.0', '--port', $frontendPort -WorkingDirectory $frontendRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $logRoot 'frontend.stdout.log') -RedirectStandardError (Join-Path $logRoot 'frontend.stderr.log') -PassThru
     Write-Host "Backend: $backendUrl | Frontend: $frontendUrl"
     Write-Host "Backend Python: $pythonPath"
     Write-Host "Logs: $logRoot"

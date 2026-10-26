@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { AgentForm } from "@/components/ui-app/agent-form";
 import { LogoPicker } from "@/components/ui-app/primitives";
 import { Sidebar, recentProjects } from "@/components/ui-app/sidebar";
+import { WorkspaceToolsProvider } from "@/components/ui-app/workspace-tools";
 import { TeamForm } from "@/components/ui-app/team-form";
 import NotificationsPage from "@/app/(workspace)/notifications/page";
 import { useRealtime } from "@/lib/realtime";
@@ -240,7 +241,11 @@ test("Sidebar keeps projects independently expanded, name clicks preserve order,
               : undefined,
   );
   const user = userEvent.setup();
-  mount(<Sidebar />);
+  mount(
+    <WorkspaceToolsProvider>
+      <Sidebar />
+    </WorkspaceToolsProvider>,
+  );
   await screen.findByRole("link", { name: "Project 6" });
   await user.click(
     screen.getByRole("button", { name: "Mở project Project 6" }),

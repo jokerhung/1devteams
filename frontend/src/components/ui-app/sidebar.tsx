@@ -18,6 +18,9 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   X,
+  Wrench,
+  SquareTerminal,
+  FolderOpen,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import {
@@ -36,6 +39,7 @@ import { Modal, StatusBadge, UserAvatar, ErrorState } from "./primitives";
 import { ProjectDialog } from "./project-dialog";
 import { CreateTicketDialog } from "./ticket-dialog";
 import { AppBrand } from "./app-brand";
+import { useWorkspaceTools } from "./workspace-tools";
 export function recentProjects(projects: Project[], currentId?: string) {
   const sorted = [...projects].sort(
     (a, b) =>
@@ -226,6 +230,7 @@ function ProjectItem({
   );
 }
 export function Sidebar() {
+  const tools = useWorkspaceTools();
   const pathname = usePathname();
   const router = useRouter();
   const currentId = pathname.match(/^\/projects\/([^/]+)/)?.[1];
@@ -288,46 +293,48 @@ export function Sidebar() {
         aria-label="Sidebar"
         className={`fixed inset-y-0 left-0 z-40 flex shrink-0 flex-col bg-[#EBE9D8] px-2.5 py-4 text-[13px] lg:static lg:z-auto lg:h-full lg:py-1 ${compact ? "w-16" : "w-60"} ${mobile ? "flex" : "hidden lg:flex"}`}
       >
-        <div
-          className={`mb-5 flex gap-2 pt-1 ${compact ? "flex-col items-center" : "items-center justify-between px-1"}`}
-        >
-          <Link
-            href="/"
-            aria-label="aiteams · Trang chủ"
-            onClick={() => setMobile(false)}
-            className="flex min-w-0 items-center gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-stone-400"
+        <div className="mb-3 flex flex-col gap-2 pt-1">
+          <div
+            className={`flex gap-2 ${compact ? "flex-col items-center" : "items-center justify-between px-1"}`}
           >
-            <span
-              className="relative flex shrink-0 items-center"
-              title={`Claude: ${health.data?.acp.claude ? "OK" : "lỗi"} · Codex: ${health.data?.acp.codex ? "OK" : "lỗi"}`}
+            <Link
+              href="/"
+              aria-label="aiteams · Trang chủ"
+              onClick={() => setMobile(false)}
+              className="flex min-w-0 items-center gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-stone-400"
             >
-              <AppBrand compact={compact} />
               <span
-                className={`absolute -bottom-0.5 left-[34px] size-2 rounded-full border border-[#EBE9D8] ${connected ? "bg-emerald-500" : "bg-amber-500"}`}
-              />
-            </span>
-          </Link>
-          <button
-            type="button"
-            className="hidden size-8 shrink-0 items-center justify-center rounded-lg text-stone-500 hover:bg-[#DFDDD0] focus-visible:ring-2 focus-visible:ring-stone-400 lg:flex"
-            aria-label={compact ? "Mở rộng sidebar" : "Thu gọn sidebar"}
-            title={compact ? "Mở rộng sidebar" : "Thu gọn sidebar"}
-            aria-expanded={!compact}
-            onClick={() => setCollapsed(!collapsed)}
-          >
-            {compact ? (
-              <PanelLeftOpen size={17} aria-hidden="true" />
-            ) : (
-              <PanelLeftClose size={17} aria-hidden="true" />
-            )}
-          </button>
-          <button
-            className="lg:hidden"
-            aria-label="Đóng sidebar"
-            onClick={() => setMobile(false)}
-          >
-            <X size={16} />
-          </button>
+                className="relative flex shrink-0 items-center"
+                title={`Claude: ${health.data?.acp.claude ? "OK" : "lỗi"} · Codex: ${health.data?.acp.codex ? "OK" : "lỗi"}`}
+              >
+                <AppBrand compact={compact} />
+                <span
+                  className={`absolute -bottom-0.5 left-[34px] size-2 rounded-full border border-[#EBE9D8] ${connected ? "bg-emerald-500" : "bg-amber-500"}`}
+                />
+              </span>
+            </Link>
+            <button
+              type="button"
+              className="hidden size-8 shrink-0 items-center justify-center rounded-lg text-stone-500 hover:bg-[#DFDDD0] focus-visible:ring-2 focus-visible:ring-stone-400 lg:flex"
+              aria-label={compact ? "Mở rộng sidebar" : "Thu gọn sidebar"}
+              title={compact ? "Mở rộng sidebar" : "Thu gọn sidebar"}
+              aria-expanded={!compact}
+              onClick={() => setCollapsed(!collapsed)}
+            >
+              {compact ? (
+                <PanelLeftOpen size={17} aria-hidden="true" />
+              ) : (
+                <PanelLeftClose size={17} aria-hidden="true" />
+              )}
+            </button>
+            <button
+              className="lg:hidden"
+              aria-label="Đóng sidebar"
+              onClick={() => setMobile(false)}
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
         <nav className="space-y-0.5">
           <Link
@@ -378,6 +385,55 @@ export function Sidebar() {
             <Workflow size={16} aria-hidden="true" />
             <span className={compact ? "sr-only" : undefined}>Template</span>
           </Link>
+          <div
+            role="group"
+            aria-label="Tools"
+            className={`flex ${compact ? "flex-col items-center" : "items-center gap-2 px-3 py-0.5"}`}
+          >
+            {!compact && (
+              <>
+                <Wrench size={16} className="shrink-0" aria-hidden="true" />
+                <span>Tools</span>
+              </>
+            )}
+            <div
+              className={`flex gap-0 ${compact ? "flex-col" : "ml-auto items-center"}`}
+            >
+              {[
+                {
+                  label: "Terminal",
+                  icon: SquareTerminal,
+                  open: tools.terminalOpen,
+                  toggle: tools.toggleTerminal,
+                  controls: "ticket-terminal-panel",
+                },
+                {
+                  label: "Files",
+                  icon: FolderOpen,
+                  open: tools.filesOpen,
+                  toggle: tools.toggleFiles,
+                  controls: "ticket-files-panel",
+                },
+              ].map(({ label, icon: Icon, open, toggle, controls }) => (
+                <button
+                  key={label}
+                  type="button"
+                  aria-label={label}
+                  title={label}
+                  aria-pressed={open}
+                  aria-controls={controls}
+                  className={`flex size-8 shrink-0 items-center justify-center rounded-lg text-stone-500 hover:bg-[#DFDDD0] focus-visible:ring-2 focus-visible:ring-stone-400 ${open ? "bg-[#DFDDD0] text-stone-900" : ""}`}
+                  onClick={() => {
+                    toggle();
+                    setMobile(false);
+                  }}
+                >
+                  <Icon size={16} aria-hidden="true" />
+                  <span className="sr-only">{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </nav>
         {compact ? (
           <div className="mt-5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">

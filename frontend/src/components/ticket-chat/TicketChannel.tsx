@@ -27,8 +27,6 @@ import type {
   PendingMessage,
 } from "./types";
 import { ChannelHeader } from "./ChannelHeader";
-import { TerminalDock } from "./TerminalDock";
-import { WorkspaceFiles } from "./WorkspaceFiles";
 import { MessageStream } from "./MessageStream";
 import { Composer } from "./Composer";
 import { RightDrawer } from "./RightDrawer";
@@ -131,8 +129,6 @@ function Channel({
   const [store] = useState(() => createTicketStore(ticket.status));
   const state = useStore(store);
   const [drawer, setDrawer] = useState(false);
-  const [terminal, setTerminal] = useState({ open: false, created: false });
-  const [filesOpen, setFilesOpen] = useState(false);
   const [log, setLog] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [historyPage, setHistoryPage] = useState<HistoryPage | null>(null);
@@ -334,26 +330,13 @@ function Channel({
         canReport={!!config.data?.can_report}
         canRelease={!!config.data?.can_confirm}
         onDrawer={() => setDrawer(true)}
-        terminalOpen={terminal.open}
-        filesOpen={filesOpen}
-        onFiles={() => setFilesOpen((previous) => !previous)}
-        onTerminal={() =>
-          setTerminal((previous) => ({ open: !previous.open, created: true }))
-        }
         onAction={async (action) => {
           await send(`/tickets/${tid}/${action}`);
           await refresh();
         }}
       />
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <TerminalDock
-          projectId={project.id}
-          open={terminal.open}
-          created={terminal.created}
-          onClose={() =>
-            setTerminal((previous) => ({ ...previous, open: false }))
-          }
-        >
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {state.connection !== "connected" && loaded && (
             <div
               role="status"
@@ -565,13 +548,7 @@ function Channel({
               </span>
             </footer>
           </div>
-        </TerminalDock>
-        {filesOpen && (
-          <WorkspaceFiles
-            projectId={project.id}
-            onClose={() => setFilesOpen(false)}
-          />
-        )}
+        </div>
       </div>
       {drawer &&
         (version.data ? (

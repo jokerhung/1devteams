@@ -61,6 +61,7 @@ async def seed(db, settings) -> None:
         ("@leader", "Leader (Điều phối)", "COORDINATOR", "claude-code", "🧭", "sky", "read_only"),
         ("@planner", "Implementation Planner", "PLANNER", "claude-code", "📋", "purple", "read_only"),
         ("@designer", "UI/UX Designer", "DESIGNER", "claude-code", "🎨", "amber", "read_only"),
+        ("@workflow", "Workflow", "WORKFLOW", "claude-code", "🔀", "sky", "read_only"),
     ]
     agents = []
     added_feature_agents = []
@@ -92,7 +93,8 @@ async def seed(db, settings) -> None:
             await db.flush()
             if role in {"COORDINATOR", "PLANNER", "DESIGNER"}:
                 added_feature_agents.append(agent)
-        agents.append(agent)
+        if role != "WORKFLOW":
+            agents.append(agent)
     team = await db.scalar(select(Team).where(Team.name == DEFAULT_TEAM))
     if team is None:
         team = Team(name=DEFAULT_TEAM, description="Default bugfix team", icon="🐛")

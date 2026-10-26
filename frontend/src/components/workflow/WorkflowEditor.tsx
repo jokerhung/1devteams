@@ -25,6 +25,7 @@ import { WorkflowCanvas } from "./WorkflowCanvas";
 import { NodeInspector } from "./NodeInspector";
 import { ValidationPanel } from "./ValidationPanel";
 import { PipelineView } from "./PipelineView";
+import { WorkflowAssistantPanel } from "./WorkflowAssistantPanel";
 type ValidationResult = {
   is_valid: boolean;
   errors: string[];
@@ -406,22 +407,6 @@ function Editor({
                   void instance.fitView({ padding: 0.15 });
               }}
             />
-            <NodeInspector
-              node={state.nodes.find((n) => n.selected)}
-              nodes={state.nodes}
-              agents={agents}
-              disabled={archived || busy}
-              onChange={(data) => {
-                const selected = store.getState().nodes.find((n) => n.selected);
-                if (selected) store.getState().updateNode(selected.id, data);
-              }}
-              onDelete={() => store.getState().removeSelected()}
-              onEditAgent={(agent) => {
-                if (["OWNER", "ADMIN"].includes(me.data?.system_role || ""))
-                  setEditAgent(agent);
-                else toast.error("Chỉ quản trị viên được sửa cấu hình agent");
-              }}
-            />
           </>
         ) : (
           <div className="min-w-0 flex-1">
@@ -432,6 +417,32 @@ function Editor({
             />
           </div>
         )}
+        <WorkflowAssistantPanel
+          endpoint={`/workflows/${workflow.id}/assistant`}
+          store={store}
+          disabled={archived || busy}
+          onApplied={() => {
+            setView("canvas");
+            setTimeout(() => rf.current?.fitView({ padding: 0.15 }), 50);
+          }}
+        >
+          <NodeInspector
+            node={state.nodes.find((n) => n.selected)}
+            nodes={state.nodes}
+            agents={agents}
+            disabled={archived || busy}
+            onChange={(data) => {
+              const selected = store.getState().nodes.find((n) => n.selected);
+              if (selected) store.getState().updateNode(selected.id, data);
+            }}
+            onDelete={() => store.getState().removeSelected()}
+            onEditAgent={(agent) => {
+              if (["OWNER", "ADMIN"].includes(me.data?.system_role || ""))
+                setEditAgent(agent);
+              else toast.error("Chỉ quản trị viên được sửa cấu hình agent");
+            }}
+          />
+        </WorkflowAssistantPanel>
       </div>
       <ValidationPanel issues={issues} onFocus={focus} />
       {publishOpen && (

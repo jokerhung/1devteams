@@ -73,7 +73,7 @@ async def test_seed_is_idempotent(client):
     async with client.app.state.db_session() as db:
         await seed(db, client.app.state.settings)
         await seed(db, client.app.state.settings)
-        assert len((await db.scalars(select(Agent))).all()) == 7
+        assert len((await db.scalars(select(Agent))).all()) == 8
     teams = (await client.get("/api/teams")).json()
     assert len(teams) == 1 and len(teams[0]["agent_ids"]) == 7
     assert (await client.get("/api/projects")).json()["total"] == 0

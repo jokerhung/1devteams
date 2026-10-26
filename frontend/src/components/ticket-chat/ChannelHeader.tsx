@@ -2,7 +2,6 @@
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
-import { FolderOpen, SquareTerminal } from "lucide-react";
 import type { Project, Workflow, Ticket } from "@/lib/types";
 import { StatusBadge, ConfirmDialog } from "@/components/ui-app/primitives";
 export function ChannelHeader({
@@ -14,10 +13,6 @@ export function ChannelHeader({
   canReport,
   canRelease,
   onDrawer,
-  terminalOpen,
-  onTerminal,
-  filesOpen,
-  onFiles,
   onAction,
 }: {
   ticket: Ticket;
@@ -28,10 +23,6 @@ export function ChannelHeader({
   canReport: boolean;
   canRelease: boolean;
   onDrawer: () => void;
-  terminalOpen: boolean;
-  onTerminal: () => void;
-  filesOpen: boolean;
-  onFiles: () => void;
   onAction: (action: "cancel" | "retry" | "force-release") => Promise<void>;
 }) {
   const [cancel, setCancel] = useState(false);
@@ -69,27 +60,6 @@ export function ChannelHeader({
             onClick={onDrawer}
           >
             ⚙
-          </button>
-          <button
-            className="btn btn-light"
-            aria-label="Bật/tắt terminal"
-            aria-pressed={terminalOpen}
-            aria-controls="ticket-terminal-panel"
-            title="Bật/tắt terminal"
-            onClick={onTerminal}
-          >
-            <SquareTerminal size={16} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="btn btn-light"
-            aria-label="Bật/tắt panel file"
-            aria-pressed={filesOpen}
-            aria-controls="ticket-files-panel"
-            title="Bật/tắt panel file"
-            onClick={onFiles}
-          >
-            <FolderOpen size={16} aria-hidden="true" />
           </button>
           <details className="relative">
             <summary

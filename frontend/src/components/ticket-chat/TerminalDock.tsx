@@ -113,6 +113,7 @@ export function TerminalDock({
         <div className="min-h-0 flex-1 overflow-auto p-2">
           {created && (
             <RemoteTerminal
+              key={projectId}
               projectId={projectId}
               docked
               reconnectKey={reconnectKey}

@@ -23,6 +23,7 @@ import { SidebarPalette, type PaletteItem } from "./SidebarPalette";
 import { NodeInspector } from "./NodeInspector";
 import { ValidationPanel } from "./ValidationPanel";
 import { PipelineView } from "./PipelineView";
+import { WorkflowAssistantPanel } from "./WorkflowAssistantPanel";
 
 type Props = {
   template: { id: string; name: string; graph: WorkflowGraph };
@@ -236,20 +237,6 @@ function Editor({ template, agents, editable }: Props) {
                 void instance.fitView({ padding: 0.15 });
               }}
             />
-            <NodeInspector
-              node={state.nodes.find((n) => n.selected)}
-              nodes={state.nodes}
-              agents={agents}
-              disabled={disabled}
-              onChange={(data) => {
-                const selected = store.getState().nodes.find((n) => n.selected);
-                if (selected) store.getState().updateNode(selected.id, data);
-              }}
-              onDelete={() => store.getState().removeSelected()}
-              onEditAgent={() =>
-                toast.info("Sửa cấu hình agent tại Agents & Teams")
-              }
-            />
           </>
         ) : (
           <div className="min-w-0 flex-1">
@@ -260,6 +247,30 @@ function Editor({ template, agents, editable }: Props) {
             />
           </div>
         )}
+        <WorkflowAssistantPanel
+          endpoint={`/workflow-templates/${template.id}/assistant`}
+          store={store}
+          disabled={disabled}
+          onApplied={() => {
+            setView("canvas");
+            setTimeout(() => rf.current?.fitView({ padding: 0.15 }), 50);
+          }}
+        >
+          <NodeInspector
+            node={state.nodes.find((n) => n.selected)}
+            nodes={state.nodes}
+            agents={agents}
+            disabled={disabled}
+            onChange={(data) => {
+              const selected = store.getState().nodes.find((n) => n.selected);
+              if (selected) store.getState().updateNode(selected.id, data);
+            }}
+            onDelete={() => store.getState().removeSelected()}
+            onEditAgent={() =>
+              toast.info("Sửa cấu hình agent tại Agents & Teams")
+            }
+          />
+        </WorkflowAssistantPanel>
       </div>
       <ValidationPanel
         issues={issues}
