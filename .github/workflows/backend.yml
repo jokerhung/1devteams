@@ -17,6 +17,7 @@ jobs:
         with:
           version: '0.12.13'
       - run: uv sync --frozen --python 3.12
+      - run: uv run playwright install --with-deps chromium
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy
@@ -46,4 +47,5 @@ jobs:
         with:
           version: '0.12.13'
       - run: uv sync --frozen --python 3.12
+      - run: uv run playwright install --with-deps chromium
       - run: uv run pytest tests/api tests/engine

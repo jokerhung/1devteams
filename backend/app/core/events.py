@@ -11,7 +11,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func, select, update
 
 from app.core.config import Settings
-from app.db.models import Ticket, TicketMessage
+from app.db.models import Attachment, Ticket, TicketMessage
 
 
 class EventBus:
@@ -103,6 +103,18 @@ class EventBus:
                         run_id=event.get("run_id"),
                         node_id=event.get("node_id"),
                     )
+                    if row.event_type == "browser_report":
+                        identifiers = [item["id"] for item in row.event_metadata.get("attachments", [])]
+                        if identifiers:
+                            await db.execute(
+                                update(Attachment)
+                                .where(
+                                    Attachment.id.in_(identifiers),
+                                    Attachment.ticket_id == ticket_id,
+                                    Attachment.message_id.is_(None),
+                                )
+                                .values(message_id=row.id)
+                            )
                     await db.commit()
                     event = message_event(row)
                 await self.broadcast(channel, event)

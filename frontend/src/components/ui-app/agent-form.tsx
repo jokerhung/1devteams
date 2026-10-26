@@ -25,6 +25,7 @@ const readOnly: Permission = {
   allow_write: false,
   allow_terminal: false,
   allow_fetch: false,
+  allow_browser: false,
   can_git_release: false,
   allowed_commands: [],
   blocked_commands: ["git commit", "git push", "git reset --hard", "rm -rf"],
@@ -446,14 +447,35 @@ export function AgentForm({
             <option value="custom">Tuỳ chỉnh</option>
           </select>
         </label>
+        <div className="rounded-lg border border-stone-200 p-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={!!permission.allow_browser}
+              onChange={(event) => {
+                setPreset("custom");
+                setPermission({
+                  ...permission,
+                  allow_browser: event.target.checked,
+                });
+              }}
+            />
+            Cho phép dùng Browser Worker
+          </label>
+          <p className="mt-1 text-xs text-stone-500">
+            Tự mở web, chạy test và gửi PASS/FAIL kèm screenshot vào chat. Truy
+            cập mọi URL HTTP/HTTPS, kể cả mạng local; áp dụng cho cả ACP và API
+            Custom.
+          </p>
+        </div>
         {custom ? (
           <div className="space-y-3 rounded-xl border border-sky-200 bg-sky-50 p-4">
             <p className="text-xs leading-relaxed text-sky-900">
               Agent gọi OpenAI Custom qua endpoint tương thích OpenAI
               (/chat/completions) với URL tuỳ chỉnh (OpenAI, Azure, OpenRouter,
-              LiteLLM, Ollama, vLLM…). Agent loại này chỉ trả lời văn bản: không
-              tự đọc/sửa file hay chạy lệnh trong workspace — hợp với vai trò
-              BA, review, tóm tắt, giải thích.
+              LiteLLM, Ollama, vLLM…). Agent không tự đọc/sửa file hay chạy lệnh
+              trong workspace. Có thể test web khi được cấp quyền Browser Worker
+              ở trên.
             </p>
             <label className="field">
               Base URL

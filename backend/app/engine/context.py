@@ -13,6 +13,7 @@ from app.core.config import Settings
 from app.core.events import EventBus
 from app.db.models import Agent, Ticket, TicketMessage
 from app.services.agent_service import runtime_config
+from app.services.browser_worker import BrowserWorkerManager
 from app.services.git_service import GitService
 
 
@@ -32,6 +33,7 @@ class RunContext:
     had_writer: bool = False
     overload_gate_counts: dict[str, int] | None = None
     completion_metadata: dict[str, Any] | None = None
+    browser_manager: BrowserWorkerManager | None = None
 
     async def agent(self, agent_id: str) -> AgentRuntimeConfig:
         async with self.sessions() as db:

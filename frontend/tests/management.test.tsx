@@ -44,6 +44,7 @@ const agent: Agent = {
     allow_write: false,
     allow_terminal: false,
     allow_fetch: false,
+    allow_browser: false,
     can_git_release: false,
     allowed_commands: [],
     blocked_commands: [],

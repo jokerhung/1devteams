@@ -14,6 +14,9 @@ import pytest
 
 @pytest.mark.real_acp
 async def test_real_hnbg_copy_workflow(client, tmp_path):
+    # Settings also reads the developer's .env. A trusted local run is not proof
+    # that native tools are isolated or that the required Git DENY is enforced.
+    client.app.state.settings.trusted_native_acp = False
     source = Path(os.environ.get("AITEAMS_REAL_SOURCE_WORKSPACE", r"D:\VETC\FE\HNBG_DEV"))
     if not await asyncio.to_thread(source.is_dir):
         pytest.skip("Set AITEAMS_REAL_SOURCE_WORKSPACE to a local repository to copy")

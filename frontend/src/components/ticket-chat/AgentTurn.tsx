@@ -3,6 +3,7 @@ import { eventDate } from "./time";
 import type { Agent } from "@/lib/types";
 import { Logo } from "@/components/ui-app/primitives";
 import { TurnDetails } from "./TurnDetails";
+import { BrowserReports } from "./BrowserReports";
 import { MarkdownContent } from "./blocks/MarkdownContent";
 import { InlineConfirmBox } from "./InlineConfirmBox";
 import { cleanContent } from "./groupEvents";
@@ -77,6 +78,9 @@ export function AgentTurn({
           agents={agents}
           streaming={running}
         />
+        {!!turn.browserReports?.length && (
+          <BrowserReports reports={turn.browserReports} />
+        )}
         <TurnDetails
           ticketId={ticketId}
           turn={turn}

@@ -102,6 +102,8 @@ def project_events(rows):
             elif kind == "agent_turn_end":
                 payload["content"] = row.content
                 payload["endedAt"] = event["created_at"]
+            elif kind == "browser_report":
+                payload.setdefault("browserReports", []).append(meta)
             elif kind == "error":
                 payload["failed"] = True
             counts = payload["detailCounts"]
@@ -133,7 +135,7 @@ async def record_summary(db, row):
         ).all()
         await save_entries(db, row.ticket_id, project_events(rows))
         return
-    if row.run_id and row.event_type not in {"agent_turn_start", "agent_turn_end", "error"}:
+    if row.run_id and row.event_type not in {"agent_turn_start", "agent_turn_end", "error", "browser_report"}:
         return
     if not row.run_id and row.sender_type != "USER" and row.event_type not in {"log", "error"}:
         return

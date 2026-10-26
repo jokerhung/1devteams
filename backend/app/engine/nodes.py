@@ -107,6 +107,14 @@ async def stream_turn(
     images: list[dict[str, Any]] | None = None,
 ) -> tuple[str, list[str]]:
     async with asyncio.timeout(ctx.settings.acp_prompt_timeout_sec):
+        if session.cfg.permission_profile.allow_browser:
+            from app.engine.browser import browser_turn
+
+            async def stream(text: str, pictures: list[dict[str, Any]] | None) -> tuple[str, list[str]]:
+                return await _stream_turn(ctx, session, text, nid, run_id, pictures, suppress_text=True)
+
+            async with asyncio.timeout(ctx.settings.browser_run_timeout_sec):
+                return await browser_turn(ctx, session, prompt, nid, run_id, images, stream)
         return await _stream_turn(ctx, session, prompt, nid, run_id, images)
 
 
@@ -117,6 +125,8 @@ async def _stream_turn(
     nid: str,
     run_id: str,
     images: list[dict[str, Any]] | None = None,
+    *,
+    suppress_text: bool = False,
 ) -> tuple[str, list[str]]:
     buffers: dict[str, str] = {}
     full = ""
@@ -163,7 +173,8 @@ async def _stream_turn(
             if event.event_type == "message_chunk":
                 full += event.content
             if event.event_type in {"message_chunk", "thought_chunk"}:
-                buffers[event.event_type] = buffers.get(event.event_type, "") + event.content
+                if not suppress_text:
+                    buffers[event.event_type] = buffers.get(event.event_type, "") + event.content
             else:
                 await flush()
                 if event.event_type == "error":
@@ -185,7 +196,9 @@ async def _stream_turn(
                     await emit(
                         "log",
                         "✔ stopReason=" + str(event.metadata.get("stop_reason", "end_turn")),
-                        event.metadata,
+                        {k: v for k, v in event.metadata.items() if k != "full_text"}
+                        if suppress_text
+                        else event.metadata,
                     )
                 else:
                     await emit(event.event_type, event.content, event.metadata)
@@ -324,6 +337,9 @@ async def _agent_turn_once(
             files = sorted(set(relative_files))
             routing = str(node.data.get("routing", "none"))
             clean, route = parse_route(text, routing)
+            browser_status = (ctx.completion_metadata or {}).get("browser_status")
+            if browser_status and browser_status != "PASS" and routing in {"tester", "review"}:
+                route = "fail"
             clean = scrub(clean, cfg)
             if routing in ROUTES and route is None:
                 correction, _ = await stream_turn(

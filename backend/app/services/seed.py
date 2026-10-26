@@ -13,7 +13,7 @@ PRESETS = {
         allow_terminal=True,
         blocked_commands=["git commit", "git push", "git merge", "git reset", "rm -rf"],
     ).model_dump(),
-    "tester": PermissionProfile(allow_terminal=True).model_dump(),
+    "tester": PermissionProfile(allow_terminal=True, allow_browser=True).model_dump(),
     "leader": PermissionProfile(allow_terminal=True, can_git_release=True).model_dump(),
     "custom": PermissionProfile().model_dump(),
 }
@@ -93,6 +93,9 @@ async def seed(db, settings) -> None:
             await db.flush()
             if role in {"COORDINATOR", "PLANNER", "DESIGNER"}:
                 added_feature_agents.append(agent)
+        if role == "TESTER" and agent.is_builtin and "allow_browser" not in agent.permission_profile:
+            agent.permission_profile = {**agent.permission_profile, "allow_browser": True}
+            agent.config_version += 1
         if role != "WORKFLOW":
             agents.append(agent)
     team = await db.scalar(select(Team).where(Team.name == DEFAULT_TEAM))

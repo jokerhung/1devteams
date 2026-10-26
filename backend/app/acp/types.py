@@ -30,6 +30,7 @@ class PermissionProfile(BaseModel):
     allow_write: bool = False
     allow_terminal: bool = False
     allow_fetch: bool = False
+    allow_browser: bool = False
     allowed_commands: list[str] = Field(default_factory=list)
     blocked_commands: list[str] = Field(
         default_factory=lambda: [

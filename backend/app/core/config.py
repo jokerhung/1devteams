@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     terminal_audit_input: bool = False
     max_terminal_sessions: int = Field(default=8, gt=0)
     max_concurrent_tickets: int = Field(default=4, gt=0)
+    browser_max_sessions: int = Field(default=4, ge=1, le=16)
+    browser_max_actions: int = Field(default=100, ge=1, le=500)
+    browser_max_rounds: int = Field(default=30, ge=1, le=100)
+    browser_action_timeout_ms: int = Field(default=15000, ge=1000, le=60000)
+    browser_run_timeout_sec: int = Field(default=900, ge=30, le=3600)
     max_event_chars: int = Field(default=100000, ge=1024)
     overload_patterns: str = "capacity,overloaded,429,529,rate limit"
     model_retry_delays: str = "30,60"

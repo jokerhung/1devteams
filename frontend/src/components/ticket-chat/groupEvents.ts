@@ -5,6 +5,7 @@ import type {
   LogLine,
   MessageGroup,
   TurnGroup,
+  BrowserReport,
 } from "./types";
 export function toLogLine(e: ChatEvent): LogLine | null {
   const m = e.metadata || {};
@@ -144,6 +145,12 @@ export function groupEvents(
       const line = toLogLine(e);
       if (line) turn.logLines.push(line);
       switch (e.event_type) {
+        case "browser_report":
+          turn.browserReports = [
+            ...(turn.browserReports || []),
+            m as BrowserReport,
+          ];
+          break;
         case "message_chunk":
           turn.content += e.content;
           break;

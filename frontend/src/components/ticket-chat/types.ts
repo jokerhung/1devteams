@@ -49,6 +49,7 @@ export type Gate = {
   };
 };
 export type TurnGroup = {
+  browserReports?: BrowserReport[];
   historySeq?: number;
   lastSeq?: number;
   detailsAvailable?: boolean;
@@ -72,6 +73,18 @@ export type TurnGroup = {
   gate?: Gate;
   failed?: boolean;
   fullOutputs?: string[];
+};
+export type BrowserReport = {
+  test_case: string;
+  status: "PASS" | "FAIL" | "BLOCKED";
+  summary: string;
+  url: string;
+  at: string;
+  checks: { action: string; status: string; error?: string }[];
+  steps: { action: string; status: string; error?: string }[];
+  attachments: Attachment[];
+  evidence_error?: string;
+  network_errors?: { url: string; status: number; method: string }[];
 };
 export type MessageGroup = (
   | TurnGroup

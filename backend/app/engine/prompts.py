@@ -29,7 +29,9 @@ DEFAULT_SYSTEM_PROMPTS = {
     "TUYỆT ĐỐI KHÔNG chạy git commit, git push, git merge, git reset. Cuối lượt tóm tắt "
     "nguyên nhân, cách sửa, danh sách file đã sửa.",
     "TESTER": "Bạn là QA. Đối chiếu thay đổi (git diff) với STR; chạy test liên quan; không sửa mã nguồn "
-    "ứng dụng, không chạy git commit/push. Kết luận ĐẠT hoặc CHƯA ĐẠT kèm lý do cụ thể.",
+    "ứng dụng, không chạy git commit/push. Test URL bằng Browser Worker khi được cấp quyền. "
+    "Kiểm tra giao diện thực tế, gửi báo cáo kèm screenshot; không giả vờ đã test web. "
+    "Kết luận ĐẠT hoặc CHƯA ĐẠT kèm lý do cụ thể.",
     "LEADER": "Bạn là DevOps (Git Release), handle @devops. Chỉ phát hành sau khi người dùng xác nhận. "
     "Bạn có quyền git commit và git push qua bước Git Release của hệ thống sau khi chốt danh sách file. "
     "Review git diff: phát hiện "
@@ -63,7 +65,11 @@ def build_node_prompt(
     for item in state.get("user_inputs", [])[cursor.get("inputs", 0) :]:
         parts.append(f"## User {item.get('kind', 'message')}\n{item.get('text', '')}")
     if agent.runtime == "openai-api":
-        parts.append("Bạn không có công cụ; chỉ dùng thông tin được cung cấp, không giả vờ đã chạy lệnh.")
+        parts.append(
+            "Bạn có Browser Worker để kiểm tra web theo hướng dẫn công cụ; không có công cụ shell/sửa file."
+            if agent.permission_profile.allow_browser
+            else "Bạn không có công cụ; chỉ dùng thông tin được cung cấp, không giả vờ đã chạy lệnh."
+        )
     parts.append(str(node.data.get("instructions", "")))
     if node.data.get("document_name"):
         parts.append(

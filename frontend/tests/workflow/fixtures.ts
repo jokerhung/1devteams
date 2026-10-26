@@ -29,6 +29,7 @@ export const agents: Agent[] = ["BA", "DEVELOPER", "TESTER", "LEADER", "SECURITY
       allow_terminal: role !== "BA",
       can_git_release: role === "LEADER",
       allow_fetch: false,
+      allow_browser: false,
       allowed_commands: [],
       blocked_commands: [],
     },

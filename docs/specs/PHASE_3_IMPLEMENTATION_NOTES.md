@@ -97,6 +97,34 @@ nên dùng first frame để tránh token xuất hiện trong URL/access log.
 
 ## Kiểm chứng
 
+### Kiểm chứng lại ngày 2026-10-26
+
+- Chạy lại `tests/engine/test_engine.py`, `test_runtime.py`, `test_git_service.py`,
+  `test_websockets.py`, `test_acp_protocol.py`: **34 passed** trên Windows/SQLite.
+  Bao phủ vòng BA/tester, confirm/reject, release tới remote bare, permission DENY,
+  snapshot workflow, queue workspace, retry/cancel/restart/checkpoint, phân quyền,
+  WebSocket replay/live/actions và ACP peer subprocess thực.
+- Acceptance trên clone tạm của `D:\VETC\FE\HNBG_DEV`, remote bare riêng:
+  chế độ mặc định `trusted_native_acp=false` vẫn dừng FAILED ở policy gate trước
+  prompt native. Chưa có bằng chứng client-only routing hoặc sandbox đã kiểm chứng;
+  yêu cầu native end-to-end và Git DENY native vẫn **chưa đạt**.
+- Phát hiện test opt-in trước đó kế thừa `TRUSTED_NATIVE_ACP` từ `.env`.
+  Đã buộc test về false để không coi chế độ tin cậy là bằng chứng cách ly công cụ.
+  Lượt chạy trước khi sửa, với chế độ tin cậy của máy local, đã đi qua BA/developer/tester
+  nhưng dừng WAITING_USER_INPUT vì thiếu bằng chứng developer thử Git commit và nhận DENY.
+  Lượt này không hoàn tất confirm/release, không chứng minh acceptance đạt.
+- Cả hai lượt dùng database/checkpoint/workspace/remote tạm; không sửa repository
+  HNBG_DEV nguồn, không push lên origin nguồn, không thay cấu hình dịch vụ dev.
+- Rà soát adapter đã cài: `@agentclientprotocol/claude-agent-acp@0.94.0`
+  (`dist/acp-agent.js`, `canUseTool` và khởi tạo SDK) truyền permission callback,
+  nhưng SDK có thể áp dụng `bypassPermissions` trước callback; công cụ native
+  không bắt buộc thực thi qua `ClientRequestHandlers` của backend. Callback/capabilities
+  không đủ chứng minh mọi thao tác đều qua guard. Docker Linux đang chạy trên host,
+  nhưng `create_session()` hiện không có sandbox launcher hoặc mount/credential policy
+  đã được kiểm chứng. Chỉ có Docker không chứng minh được cách ly native ACP.
+  Để gỡ blocker cần triển khai và kiểm chứng đường thực thi này, rồi chạy lại acceptance;
+  không thể hoàn tất bằng cách đổi cờ tin cậy.
+
 Kết quả ngày 2026-10-23:
 
 - Rà soát bổ sung: lỗi runtime/restart được lưu vào `state.error`, retry giữ đúng node cần chạy;

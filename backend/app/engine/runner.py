@@ -19,6 +19,7 @@ from app.engine.context import RunContext
 from app.engine.prompts import user_identity
 from app.schemas.workflow import Graph
 from app.services.agent_service import runtime_config
+from app.services.browser_worker import BrowserWorkerManager
 from app.services.git_service import GitService, safe_release_path
 from app.services.notification_service import resolve_gate
 from app.services.project_service import effective_agents
@@ -46,6 +47,7 @@ class TicketRunner:
         self.closed = False
         self.adhoc_tasks: dict[str, asyncio.Task[None]] = {}
         self.capacity = asyncio.Semaphore(settings.max_concurrent_tickets)
+        self.browser_manager = BrowserWorkerManager(settings)
 
     async def load(self, tid: str) -> tuple[Any, RunContext, Ticket]:
         async with self.sessions() as db:
@@ -85,6 +87,7 @@ class TicketRunner:
                 GitService(Path(project.workspace_path)),
                 project.git_remote,
                 project.default_branch,
+                browser_manager=self.browser_manager,
             )
 
             async def terminal(command: str, output: str) -> None:
@@ -684,3 +687,4 @@ class TicketRunner:
             self.release(tid)
         for tid in self.contexts:
             await self.pool.close_ticket(tid)
+        await self.browser_manager.close()

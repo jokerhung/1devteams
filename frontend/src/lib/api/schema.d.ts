@@ -2070,6 +2070,11 @@ export interface components {
              * @default false
              */
             allow_fetch: boolean;
+            /**
+             * Allow Browser
+             * @default false
+             */
+            allow_browser: boolean;
             /** Allowed Commands */
             allowed_commands?: string[];
             /** Blocked Commands */

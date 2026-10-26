@@ -13,6 +13,8 @@ $nextPath = Join-Path $frontendRoot 'node_modules\next\dist\bin\next'
 if ($Setup) {
     & uv sync --project $backendRoot --python 3.12 --frozen
     if ($LASTEXITCODE -ne 0) { throw 'Backend dependency setup failed.' }
+    & $pythonPath -m playwright install chromium
+    if ($LASTEXITCODE -ne 0) { throw 'Browser Worker Chromium setup failed.' }
     & npm --prefix $frontendRoot ci
     if ($LASTEXITCODE -ne 0) { throw 'Frontend dependency setup failed.' }
 }
