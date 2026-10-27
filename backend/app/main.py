@@ -41,6 +41,7 @@ from app.core.logging import configure_logging  # noqa: E402
 from app.db.session import database, migrate  # noqa: E402
 from app.engine.runner import TicketRunner  # noqa: E402
 from app.schemas.common import ErrorResponse  # noqa: E402
+from app.services.adapter_actions import AdapterActions  # noqa: E402
 from app.services.assets import cleanup_pending  # noqa: E402
 from app.services.connections import ConnectionLimiter  # noqa: E402
 from app.services.models_catalog import ModelsCatalog  # noqa: E402
@@ -62,6 +63,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         configure_logging()
         app.state.workspace_settings = WorkspaceSettings(config)
+        app.state.adapter_actions = AdapterActions()
         await app.state.workspace_settings.load()
         bus = EventBus()
         bus.settings = config
@@ -128,6 +130,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             cleanup_task = asyncio.create_task(clean_attachments())
             yield
         finally:
+            await app.state.adapter_actions.close()
             if runner:
                 await runner.close()
             if cleanup_task:

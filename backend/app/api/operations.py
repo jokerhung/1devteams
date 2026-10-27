@@ -3,6 +3,7 @@ import json
 import shutil
 import sys
 from pathlib import Path
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
@@ -15,6 +16,57 @@ from app.services.audit import terminal_audit
 from app.services.common import fields
 
 router = APIRouter(tags=["Operations"])
+
+
+class AdapterActionInput(BaseModel):
+    action: Literal["install", "login", "update"]
+
+
+class AdapterLoginInput(BaseModel):
+    code: str = Field(min_length=1, max_length=4096)
+
+
+@router.post("/settings/adapters/{adapter}/actions", status_code=202)
+async def adapter_action(adapter: str, body: AdapterActionInput, request: Request, user: Admin):
+    runner = request.app.state.ticket_runner
+    if (
+        runner.tasks
+        or runner.adhoc_tasks
+        or any(s.busy for s in request.app.state.acp_pool.sessions.values())
+    ):
+        fail(409, "Agent đang chạy. Hoàn tất lượt hiện tại trước khi thay đổi adapter hoặc đăng nhập.")
+    job = request.app.state.adapter_actions.start(adapter, body.action, user.id)
+    return job.public()
+
+
+@router.get("/settings/adapter-actions/{job_id}")
+async def adapter_action_state(job_id: UUID, request: Request, user: Admin):
+    return request.app.state.adapter_actions.get(str(job_id), user.id).public()
+
+
+@router.get("/settings/adapter-actions")
+async def current_adapter_action(request: Request, user: Admin):
+    jobs = request.app.state.adapter_actions.jobs.values()
+    job = next((job for job in reversed(list(jobs)) if job.user_id == user.id), None)
+    return job.public() if job else None
+
+
+@router.post("/settings/adapter-actions/{job_id}/cancel")
+async def adapter_action_cancel(job_id: UUID, request: Request, user: Admin):
+    manager = request.app.state.adapter_actions
+    job = manager.get(str(job_id), user.id)
+    await manager.cancel(job)
+    return job.public()
+
+
+@router.post("/settings/adapter-actions/{job_id}/input")
+async def adapter_login_input(job_id: UUID, body: AdapterLoginInput, request: Request, user: Admin):
+    job = request.app.state.adapter_actions.get(str(job_id), user.id)
+    if job.action != "login" or job.status != "running" or not job.process or not job.process.stdin:
+        fail(409, "Không có phiên đăng nhập đang chờ")
+    job.process.stdin.write((body.code.strip() + "\n").encode())
+    await job.process.stdin.drain()
+    return {"ok": True}
 
 
 class TerminalInput(BaseModel):
