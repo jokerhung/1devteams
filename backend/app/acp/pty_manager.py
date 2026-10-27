@@ -6,6 +6,7 @@ import asyncio
 import os
 import sys
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -65,8 +66,14 @@ class Session:
     workspace: Path
     id: str = field(default_factory=lambda: str(uuid4()))
     queue: asyncio.Queue[dict[str, Any]] = field(default_factory=lambda: asyncio.Queue(maxsize=256))
-    replay: str = ""
     initial_replay: str = ""
+    resumed: bool = False
+    seq: int = 0
+    history: deque[dict[str, Any]] = field(default_factory=deque)
+    history_size: int = 0
+    initial_frames: list[dict[str, Any]] = field(default_factory=list)
+    initial_seq: int = 0
+    reset: bool = True
     attached: bool = False
     detached_at: float = field(default_factory=time.monotonic)
     reader: asyncio.Task[None] | None = None
@@ -81,7 +88,16 @@ class PTYManager:
         self.lock = asyncio.Lock()
         self.reaper: asyncio.Task[None] | None = None
 
-    async def attach(self, uid: str, pid: str, workspace: Path, rows: int, cols: int) -> Session:
+    async def attach(
+        self,
+        uid: str,
+        pid: str,
+        workspace: Path,
+        rows: int,
+        cols: int,
+        session_id: str | None = None,
+        after_seq: int = 0,
+    ) -> Session:
         # A reconnect may reach us before the previous WebSocket finishes closing.
         old = self.sessions.get((uid, pid))
         if old and old.attached:
@@ -99,6 +115,7 @@ class PTYManager:
                 old = None
             if old and old.attached:
                 raise TerminalBusyError("Terminal đang mở ở tab khác")
+            resumed = old is not None
             if old is None:
                 if len(self.sessions) >= self.settings.max_terminal_sessions:
                     raise ValueError("Đã đạt giới hạn terminal")
@@ -107,7 +124,14 @@ class PTYManager:
                 self.sessions[key] = old
                 old.reader = asyncio.create_task(self.read(old))
                 await terminal_audit(self.db, uid, pid, "open")
-            old.initial_replay = old.replay
+            old.initial_replay = "".join(frame["data"] for frame in old.history)
+            old.resumed = resumed
+            old.initial_seq = old.seq
+            first_seq = old.history[0]["seq"] if old.history else old.seq + 1
+            old.reset = not (session_id == old.id and first_seq - 1 <= after_seq <= old.seq)
+            old.initial_frames = [
+                {**frame, "replay": resumed} for frame in old.history if old.reset or frame["seq"] > after_seq
+            ]
             old.attached = True
             old.detached.clear()
             while not old.queue.empty():
@@ -122,7 +146,14 @@ class PTYManager:
                 data = await asyncio.to_thread(session.process.read, 4096)
                 if not data:
                     break
-                session.replay = (session.replay + data)[-262144:]
+                session.seq += 1
+                frame = {"type": "output", "data": data, "seq": session.seq}
+                session.history.append(frame)
+                session.history_size += len(data)
+                while (session.history_size > 262144 or len(session.history) > 4096) and len(
+                    session.history
+                ) > 1:
+                    session.history_size -= len(session.history.popleft()["data"])
                 if session.attached:
                     if session.queue.full():
                         # Explicit reconnect recovers retained terminal output.
@@ -136,7 +167,7 @@ class PTYManager:
                             }
                         )
                     else:
-                        session.queue.put_nowait({"type": "output", "data": data})
+                        session.queue.put_nowait(frame)
         except (EOFError, OSError):
             pass
         finally:

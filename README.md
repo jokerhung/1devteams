@@ -63,6 +63,23 @@ Adapter được cài **trong repo** ở `node_modules/.bin`; resolver ưu tiên
 sau đó tìm trên PATH. Có thể override `CLAUDE_ACP_BIN` / `CODEX_ACP_BIN` bằng đường dẫn tuyệt đối.
 Health chỉ xác nhận binary tồn tại, không xác nhận login hoặc inference hoạt động.
 
+## Remote terminal
+
+Terminal dùng WebSocket hai chiều tại `/ws/terminal/{project_id}` qua rewrite của Next.js
+tới `BACKEND_URL` (hoặc `NEXT_PUBLIC_API_URL`). Reverse proxy phía trước web cần cho phép
+WebSocket Upgrade. Trình duyệt dùng cookie HttpOnly; Origin phải nằm trong `CORS_ORIGINS`
+và người dùng cần quyền ghi project. Quyền được kiểm tra lại tối đa mỗi 15 giây.
+
+Output lớn được gom theo frame, phản hồi nhỏ được ghi ngay khi hàng đợi rảnh. WebGL tự
+chuyển về renderer mặc định nếu không khả dụng hoặc mất context. Khi tự kết nối lại,
+client gửi `session_id` và `after_seq` để lấy bù output. Backend giữ tối đa 262144 ký tự
+và 4096 chunk; nếu phần còn thiếu đã bị loại khỏi bộ đệm, terminal được reset và phát
+lại phần lịch sử còn giữ. Phản hồi giao thức sinh từ lịch sử không gửi ngược vào shell.
+
+PTY hiện vẫn thuộc tiến trình backend: mất kết nối web giữ shell đến thời hạn idle,
+nhưng restart backend sẽ kết thúc shell. Chỉ cần tách PTY daemon khi có yêu cầu giữ
+shell qua restart; daemon chưa thuộc thay đổi này.
+
 ## Kiểm tra
 
 ```powershell

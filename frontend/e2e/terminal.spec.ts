@@ -7,14 +7,23 @@ test("Windows terminal: real output, resize, reconnect, audit and maintainer aut
 }) => {
   test.setTimeout(120000);
   await page.addInitScript(() => {
-    const Original = window.EventSource;
+    const Original = window.WebSocket;
     const received: string[] = [];
-    Object.assign(window, { terminalFrames: received });
-    window.EventSource = class extends Original {
-      constructor(url: string | URL, options?: EventSourceInit) {
-        super(url, options);
+    const sockets: WebSocket[] = [];
+    const frames: { type: string; reset?: boolean; seq?: number }[] = [];
+    Object.assign(window, {
+      terminalFrames: received,
+      terminalSockets: sockets,
+      terminalEvents: frames,
+    });
+    window.WebSocket = class extends Original {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        super(url, protocols);
+        if (!String(url).includes("/ws/terminal/")) return;
+        sockets.push(this);
         this.addEventListener("message", (event) => {
           const frame = JSON.parse(event.data);
+          frames.push(frame);
           if (frame.type === "output") received.push(frame.data);
         });
       }
@@ -50,7 +59,10 @@ test("Windows terminal: real output, resize, reconnect, audit and maintainer aut
   await page
     .getByRole("button", { name: "Xem workflow của ticket", exact: true })
     .click();
-  await page.getByRole("button", { name: "Terminal", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Terminal", exact: true })
+    .click();
   const terminal = page.getByRole("region", { name: "Remote terminal" });
   await expect(terminal.getByTestId("remote-terminal")).toHaveAttribute(
     "data-connected",
@@ -72,6 +84,39 @@ test("Windows terminal: real output, resize, reconnect, audit and maintainer aut
       ),
     )
     .toContain("On branch develop");
+  // Keep PowerShell producing output after the socket closes; reconnect must
+  // fetch only the missing sequence range without resetting the current screen.
+  await page.evaluate(() => {
+    const state = window as unknown as { terminalSockets: WebSocket[] };
+    const socket = state.terminalSockets.at(-1)!;
+    socket.send(
+      JSON.stringify({
+        type: "input",
+        data: "Start-Sleep -Milliseconds 800; Write-Output ('MISSED_'+'OUTPUT')\r",
+      }),
+    );
+    socket.close();
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const state = window as unknown as {
+          terminalEvents: { type: string; reset?: boolean }[];
+        };
+        return state.terminalEvents.filter((f) => f.type === "ready").at(-1)
+          ?.reset;
+      }),
+    )
+    .toBe(false);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as unknown as { terminalFrames: string[] }).terminalFrames.join(
+          "",
+        ),
+      ),
+    )
+    .toContain("MISSED_OUTPUT");
   await page.setViewportSize({ width: 1100, height: 800 });
   await terminal
     .getByRole("button", { name: "Kết nối lại terminal", exact: true })
@@ -86,7 +131,7 @@ test("Windows terminal: real output, resize, reconnect, audit and maintainer aut
   );
   await page.goto("/settings/audit");
   await expect(
-    page.getByRole("heading", { name: "Nhật ký audit" }),
+    page.getByRole("heading", { name: "Nhật ký hoạt động" }),
   ).toBeVisible();
   await expect(
     page.getByRole("cell", { name: "terminal.open", exact: true }).first(),

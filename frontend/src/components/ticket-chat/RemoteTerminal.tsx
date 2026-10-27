@@ -3,9 +3,11 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { ApiError, apiFetch } from "@/lib/api";
+import { TerminalOutput } from "@/lib/terminal-output";
 import { MoreHorizontal, RotateCw } from "lucide-react";
 import {
   DropdownMenu,
@@ -57,11 +59,13 @@ export default function RemoteTerminal({
     if (!active) return;
     setStatus("Đang kết nối…");
     let disposed = false;
-    let source: EventSource | undefined;
+    let source: WebSocket | undefined;
+    let sessionId = "";
+    let lastSeq = 0;
+    let webgl: WebglAddon | undefined;
     let observer: ResizeObserver | undefined;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let input = "";
     let ready = false;
+    let authenticated = false;
     let stopped = false;
     let connecting = false;
     let generation = 0;
@@ -70,8 +74,6 @@ export default function RemoteTerminal({
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let readyTimer: ReturnType<typeof setTimeout> | undefined;
     let configRequest: AbortController | undefined;
-    let inputRequest = new AbortController();
-    let pending: Promise<unknown> = Promise.resolve();
     let scrollFrame = 0;
     setScroll({ top: 0, max: 0 });
     const term = new Terminal({
@@ -83,6 +85,7 @@ export default function RemoteTerminal({
       disableStdin: true,
     });
     const fit = new FitAddon();
+    const output = new TerminalOutput(term);
     term.loadAddon(fit);
     term.loadAddon(
       new WebLinksAddon((_event, uri) => {
@@ -110,16 +113,14 @@ export default function RemoteTerminal({
     const disconnect = () => {
       generation++;
       ready = false;
+      authenticated = false;
       term.options.disableStdin = true;
-      input = "";
-      clearTimeout(timer);
       clearTimeout(readyTimer);
       configRequest?.abort();
-      inputRequest.abort();
-      inputRequest = new AbortController();
       if (source) {
         source.onmessage = null;
         source.onerror = null;
+        source.onclose = null;
         source.close();
         source = undefined;
       }
@@ -155,35 +156,29 @@ export default function RemoteTerminal({
       } else reconnect();
     };
     const action = (body: object) => {
-      const version = generation;
-      const controller = inputRequest;
-      pending = pending
-        .then(() =>
-          disposed || !ready || version !== generation
-            ? undefined
-            : apiFetch(`/projects/${projectId}/terminal/input`, {
-                method: "POST",
-                body: JSON.stringify(body),
-                signal: controller.signal,
-              }),
-        )
-        .catch((e) => {
-          if (version === generation) fail(e);
-        });
-    };
-    const flush = () => {
-      if (input) {
-        const data = input;
-        input = "";
-        for (let i = 0; i < data.length; i += 8192)
-          action({ type: "input", data: data.slice(i, i + 8192) });
+      if (!authenticated || !source || source.readyState !== WebSocket.OPEN)
+        return false;
+      if (source.bufferedAmount > 1024 * 1024) {
+        reconnect();
+        return false;
+      }
+      try {
+        source.send(JSON.stringify(body));
+        return true;
+      } catch {
+        reconnect();
+        return false;
       }
     };
     write.current = (text) => {
       if (!ready || disposed) return false;
-      input += text;
-      clearTimeout(timer);
-      timer = setTimeout(flush, 25);
+      // Split paste input without cutting a UTF-16 surrogate pair in half.
+      for (let i = 0; i < text.length;) {
+        let end = Math.min(i + 8192, text.length);
+        if (end < text.length && /[\uD800-\uDBFF]/.test(text[end - 1])) end--;
+        if (!action({ type: "input", data: text.slice(i, end) })) return false;
+        i = end;
+      }
       return true;
     };
     const resize = () => {
@@ -196,7 +191,10 @@ export default function RemoteTerminal({
       fit.fit();
       if (ready) action({ type: "resize", cols: term.cols, rows: term.rows });
     };
-    term.onData((data) => write.current(data));
+    term.onData((data) => {
+      // Initial live negotiation may be parsed before the synced frame arrives.
+      if (output.acceptsInput) action({ type: "input", data });
+    });
     async function connect() {
       if (disposed || stopped || connecting) return;
       if (!navigator.onLine) {
@@ -221,14 +219,30 @@ export default function RemoteTerminal({
         }
         if (!term.element) {
           term.open(host.current!);
+          // Keep the default renderer if WebGL is unavailable or its context is lost.
+          try {
+            webgl = new WebglAddon();
+            webgl.onContextLoss(() => {
+              webgl?.dispose();
+              webgl = undefined;
+            });
+            term.loadAddon(webgl);
+          } catch {
+            webgl?.dispose();
+            webgl = undefined;
+          }
           observer = new ResizeObserver(resize);
           observer.observe(host.current!);
           term.focus();
         }
         resize();
-        const stream = new EventSource(
-          `/api/events?channel=terminal/${projectId}`,
-        );
+        const url = new URL(`/ws/terminal/${projectId}`, window.location.href);
+        url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+        if (sessionId) {
+          url.searchParams.set("session_id", sessionId);
+          url.searchParams.set("after_seq", String(lastSeq));
+        }
+        const stream = new WebSocket(url);
         source = stream;
         readyTimer = setTimeout(() => {
           if (source === stream && !ready) reconnect();
@@ -238,17 +252,32 @@ export default function RemoteTerminal({
           lastFrame = Date.now();
           const frame = JSON.parse(data);
           if (frame.type === "ready") {
+            authenticated = true;
+            if (frame.reset !== false || frame.session_id !== sessionId) {
+              output.reset();
+              lastSeq = 0;
+            }
+            sessionId = frame.session_id;
+          } else if (frame.type === "synced") {
             clearTimeout(readyTimer);
-            // The backend replays retained PTY output after ready; clear the old copy.
-            term.reset();
+            lastSeq = Math.max(lastSeq, frame.seq);
             ready = true;
             retries = 0;
             term.options.disableStdin = false;
             setStatus("Đã kết nối");
-            setSession(frame.session_id);
+            setSession(sessionId);
             resize();
-          } else if (frame.type === "output") term.write(frame.data);
-          else if (frame.type === "error" || frame.type === "exit") {
+          } else if (frame.type === "output") {
+            if (frame.seq <= lastSeq) return;
+            if (!frame.replay && lastSeq && frame.seq !== lastSeq + 1) {
+              reconnect(0);
+              return;
+            }
+            lastSeq = frame.seq;
+            output.write(frame.data, frame.replay === true);
+          } else if (frame.type === "ping") {
+            stream.send(JSON.stringify({ type: "pong" }));
+          } else if (frame.type === "error" || frame.type === "exit") {
             if (frame.type === "error" && frame.retryable) reconnect();
             else {
               stopped = true;
@@ -256,6 +285,9 @@ export default function RemoteTerminal({
               setStatus(frame.data || "Shell đã kết thúc");
             }
           }
+        };
+        stream.onclose = () => {
+          if (source === stream) reconnect();
         };
         stream.onerror = () => {
           if (source === stream) reconnect();
@@ -278,7 +310,7 @@ export default function RemoteTerminal({
       }
     }
     const wake = () => {
-      if (!stopped && (!ready || document.visibilityState === "visible"))
+      if (!stopped && (!ready || Date.now() - lastFrame > 45_000))
         reconnect(500);
     };
     const focus = () => {
@@ -312,11 +344,11 @@ export default function RemoteTerminal({
       window.removeEventListener("offline", offline);
       window.removeEventListener("focus", focus);
       document.removeEventListener("visibilitychange", visibility);
-      clearTimeout(timer);
       source?.close();
       cancelAnimationFrame(scrollFrame);
       touch.current = null;
       observer?.disconnect();
+      output.dispose();
       term.dispose();
       terminal.current = null;
     };

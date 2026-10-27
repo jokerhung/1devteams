@@ -36,10 +36,12 @@ def chat_event(row: TicketMessage, compact: bool):
     return event
 
 
-async def authenticate(socket: WebSocket):
+async def authenticate(socket: WebSocket, cookie_token: str | None = None):
     authorization = socket.headers.get("authorization", "")
     token = (
-        authorization[7:] if authorization.lower().startswith("bearer ") else socket.query_params.get("token")
+        authorization[7:]
+        if authorization.lower().startswith("bearer ")
+        else cookie_token or socket.query_params.get("token")
     )
     if not token:
         frame = await asyncio.wait_for(socket.receive_json(), 5)

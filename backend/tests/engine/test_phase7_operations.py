@@ -16,6 +16,7 @@ async def test_windows_pty_resize_reconnect_and_expiry(engine_client):
     manager = client.app.state.pty_manager
     manager.settings.terminal_idle_seconds = 1
     session = await manager.attach(client.owner["id"], entity["id"], client.workspace, 30, 120)
+    assert not session.resumed
     try:
         await asyncio.to_thread(session.process.setwinsize, 40, 140)
         await asyncio.to_thread(
@@ -37,6 +38,30 @@ async def test_windows_pty_resize_reconnect_and_expiry(engine_client):
         await manager.detach(session)
         resumed = await asyncio.wait_for(pending_reconnect, 2)
         assert resumed.id == session.id and "PTY_VERIFIED" in resumed.initial_replay
+        assert resumed.resumed
+        await manager.detach(resumed)
+        # Output produced while disconnected is delivered as a delta, in order.
+        after_seq = session.seq
+        await asyncio.to_thread(session.process.write, "Write-Output ('DELTA_'+'VERIFIED')\r")
+        async with asyncio.timeout(15):
+            # Detached output has no queue notification; poll its bounded history.
+            while "DELTA_VERIFIED" not in "".join(f["data"] for f in session.history):  # noqa: ASYNC110
+                await asyncio.sleep(0.02)
+        resumed = await manager.attach(
+            client.owner["id"], entity["id"], client.workspace, 30, 120, session.id, after_seq
+        )
+        assert not resumed.reset
+        assert [f["seq"] for f in resumed.initial_frames] == list(
+            range(after_seq + 1, resumed.initial_seq + 1)
+        )
+        assert all(f["replay"] for f in resumed.initial_frames)
+        await manager.detach(resumed)
+        # A different session ID cannot apply a delta to an unrelated screen.
+        resumed = await manager.attach(
+            client.owner["id"], entity["id"], client.workspace, 30, 120, "stale-session", after_seq
+        )
+        assert resumed.reset
+        assert "PTY_VERIFIED" in "".join(f["data"] for f in resumed.initial_frames)
         await manager.detach(resumed)
         await asyncio.wait_for(session.closed.wait(), 5)
         assert not await asyncio.to_thread(session.process.isalive)
