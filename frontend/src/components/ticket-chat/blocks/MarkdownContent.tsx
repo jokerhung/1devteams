@@ -8,10 +8,23 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import Markdown, { type Components } from "react-markdown";
+import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Agent } from "@/lib/types";
 import { AgentPill } from "@/components/ui-app/primitives";
+import { ChatImage } from "@/components/ui-app/chat-image";
+import { assetUrl } from "@/lib/api";
+
+function imageUrl(src: string) {
+  return src.startsWith("/api/attachments/") ? assetUrl(src) : src;
+}
+
+function isImageLink(href: string) {
+  return (
+    /^data:image\/(?:png|jpeg|gif|webp);base64,/i.test(href) ||
+    /\.(?:png|jpe?g|gif|webp|avif|bmp)(?:[?#]|$)/i.test(href)
+  );
+}
 const emptyAgents: Agent[] = [];
 function Highlight({
   code,
@@ -86,16 +99,39 @@ export function MarkdownContent({
     return {
       p: ({ children }) => <p>{mention(children)}</p>,
       li: ({ children }) => <li>{mention(children)}</li>,
-      a: ({ children, href }) => (
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sky-700 underline"
-        >
-          {children}
-        </a>
-      ),
+      img: ({ src, alt }) =>
+        typeof src === "string" && src ? (
+          <ChatImage src={imageUrl(src)} alt={alt || "Ảnh trong hội thoại"} />
+        ) : null,
+      a: ({ children, href, node }) => {
+        if (
+          node?.children.some(
+            (child) => child.type === "element" && child.tagName === "img",
+          )
+        )
+          return <span>{children}</span>;
+        if (href && isImageLink(href))
+          return (
+            <ChatImage
+              src={imageUrl(href)}
+              alt={
+                Children.toArray(children)
+                  .filter((child) => typeof child === "string")
+                  .join("") || "Ảnh trong hội thoại"
+              }
+            />
+          );
+        return (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sky-700 underline"
+          >
+            {children}
+          </a>
+        );
+      },
       pre: ({ children }) => {
         const child = Children.toArray(children)[0];
         if (isValidElement<{ className?: string; children?: string }>(child))
@@ -123,7 +159,15 @@ export function MarkdownContent({
       className="space-y-2 break-words text-[13.5px] leading-relaxed [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_table]:block [&_table]:overflow-x-auto [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2"
       data-testid="markdown-content"
     >
-      <Markdown remarkPlugins={[remarkGfm]} components={components}>
+      <Markdown
+        remarkPlugins={[remarkGfm]}
+        components={components}
+        urlTransform={(url) =>
+          /^data:image\/(?:png|jpeg|gif|webp);base64,/i.test(url)
+            ? url
+            : defaultUrlTransform(url)
+        }
+      >
         {streaming ? rendered : text}
       </Markdown>
     </div>

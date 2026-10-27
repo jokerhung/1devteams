@@ -14,6 +14,8 @@ export async function GET(
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const contentType = request.headers.get("content-type");
   if (contentType) headers.set("Content-Type", contentType);
+  const accept = request.headers.get("accept");
+  if (accept) headers.set("Accept", accept);
   try {
     const response = await fetch(
       `${backendUrl}/api/${path.map(encodeURIComponent).join("/")}${new URL(request.url).search}`,
@@ -24,13 +26,14 @@ export async function GET(
           ? undefined
           : await request.arrayBuffer(),
         cache: "no-store",
-        signal: AbortSignal.timeout(120000),
+        signal: AbortSignal.timeout(path[0] === "agent-chat" ? 960000 : 120000),
         redirect: "error",
       },
     );
     const resultHeaders = new Headers({
       "Cache-Control": "no-store",
       "X-Content-Type-Options": "nosniff",
+      "X-Accel-Buffering": "no",
     });
     for (const name of ["content-type", "content-disposition"]) {
       const value = response.headers.get(name);

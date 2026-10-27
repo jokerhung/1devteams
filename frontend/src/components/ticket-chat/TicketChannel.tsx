@@ -400,6 +400,37 @@ function Channel({
             />
           )}
           <div className="shrink-0 px-5 pt-2">
+            {state.status === "FAILED" && (
+              <div
+                role="alert"
+                className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
+              >
+                <p>
+                  Workflow đã dừng do lỗi. Gửi tin nhắn @agent đang lỗi để chạy
+                  lại bước đó; khi agent hoàn tất hợp lệ, workflow tự động chạy
+                  tiếp.
+                </p>
+                <p className="mt-1">
+                  Sau khi xử lý lỗi runtime hoặc cấu hình agent, chọn tiếp tục
+                  từ checkpoint để chạy lại bước bị lỗi và bàn giao theo flow.
+                </p>
+                {config.data?.can_report && (
+                  <button
+                    className="btn btn-light mt-2"
+                    onClick={async () => {
+                      try {
+                        await send(`/tickets/${tid}/retry`);
+                        await refresh();
+                      } catch (e) {
+                        toast.error((e as Error).message);
+                      }
+                    }}
+                  >
+                    Tiếp tục từ checkpoint
+                  </button>
+                )}
+              </div>
+            )}
             {state.status === "CANCELLED" && config.data?.can_confirm && (
               <button
                 className="btn btn-light mb-2"

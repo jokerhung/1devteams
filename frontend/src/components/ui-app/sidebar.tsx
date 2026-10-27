@@ -21,6 +21,7 @@ import {
   Wrench,
   SquareTerminal,
   FolderOpen,
+  MessageSquare,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import {
@@ -299,7 +300,7 @@ export function Sidebar() {
           >
             <Link
               href="/"
-              aria-label="aiteams · Trang chủ"
+              aria-label="1Teams · Trang chủ"
               onClick={() => setMobile(false)}
               className="flex min-w-0 items-center gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-stone-400"
             >
@@ -400,6 +401,13 @@ export function Sidebar() {
               className={`flex gap-0 ${compact ? "flex-col" : "ml-auto items-center"}`}
             >
               {[
+                {
+                  label: "Chat với AI Agent",
+                  icon: MessageSquare,
+                  open: tools.chatOpen,
+                  toggle: tools.toggleChat,
+                  controls: "agent-chat-panel",
+                },
                 {
                   label: "Terminal",
                   icon: SquareTerminal,

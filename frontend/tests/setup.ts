@@ -10,7 +10,9 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/projects/p1",
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
 }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+}));
 class Events {
   onmessage: ((event: { data: string }) => void) | null = null;
   close() {}

@@ -8,14 +8,15 @@ import json
 import re
 from collections.abc import Awaitable, Callable
 from io import BytesIO
-from typing import Any
+from typing import Any, Protocol
 
 from fastapi import UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.acp.client import ACPSession
 from app.acp.security import scrub_data
-from app.acp.types import AgentSession
+from app.acp.types import AgentRuntimeConfig, AgentSession
+from app.core.config import Settings
 from app.db.models import Ticket
 from app.engine.context import RunContext
 from app.services.assets import store_attachment
@@ -53,6 +54,15 @@ After tools finish, summarize actual results and include the workflow's required
 class BrowserBatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     actions: list[BrowserAction] = Field(min_length=1, max_length=16)
+
+
+class BrowserContext(Protocol):
+    settings: Settings
+    browser_manager: BrowserWorkerManager | None
+    completion_metadata: dict[str, Any] | None
+
+    async def agent(self, agent_id: str) -> AgentRuntimeConfig: ...
+    async def emit(self, event_type: str, content: str = "", **data: Any) -> None: ...
 
 
 async def publish_report(
@@ -101,13 +111,14 @@ async def publish_report(
 
 
 async def browser_turn(
-    ctx: RunContext,
+    ctx: BrowserContext,
     session: AgentSession,
     prompt: str,
     nid: str,
     run_id: str,
     images: list[dict[str, Any]] | None,
     stream: Callable[[str, list[dict[str, Any]] | None], Awaitable[tuple[str, list[str]]]],
+    report_sink: Callable[[dict[str, Any], bytes | None], Awaitable[None]] | None = None,
 ) -> tuple[str, list[str]]:
     worker: BrowserWorker | None = None
     reports: list[dict[str, Any]] = []
@@ -132,7 +143,11 @@ async def browser_turn(
         except Exception:
             picture = None
             report["evidence_error"] = "Không chụp được screenshot của trang hiện tại."
-        await publish_report(ctx, session, nid, run_id, report, picture)
+        if report_sink is not None:
+            await report_sink(report, picture)
+        else:
+            assert isinstance(ctx, RunContext)
+            await publish_report(ctx, session, nid, run_id, report, picture)
         reports.append(report)
         return report
 
@@ -194,7 +209,28 @@ async def browser_turn(
                     raise PermissionError("Browser Worker permission was revoked for this agent")
                 if action.action == "report":
                     results.append(await emit_report(action.test_case, action.summary))
+                    await ctx.emit(
+                        "tool_call_update",
+                        "Browser: report",
+                        metadata={
+                            "tool_call_id": f"browser-report-{run_id}-{len(reports)}",
+                            "kind": "browser",
+                            "status": "completed",
+                            "title": "report",
+                        },
+                    )
                     continue
+                tool_id = f"browser-{run_id}-{len(worker.steps) + 1}"
+                await ctx.emit(
+                    "tool_call_update",
+                    f"Browser: {action.action}",
+                    metadata={
+                        "tool_call_id": tool_id,
+                        "kind": "browser",
+                        "title": action.action,
+                        "status": "in_progress",
+                    },
+                )
                 result = await worker.execute(action)
                 results.append(result)
                 await ctx.emit(
@@ -205,7 +241,7 @@ async def browser_turn(
                     node_id=nid,
                     run_id=run_id,
                     metadata={
-                        "tool_call_id": f"browser-{run_id}-{len(worker.steps)}",
+                        "tool_call_id": tool_id,
                         "kind": "browser",
                         "title": action.action,
                         "status": "completed" if result["status"] == "OK" else "failed",

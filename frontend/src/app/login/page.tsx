@@ -12,7 +12,7 @@ export default function LoginPage() {
       <section className="w-full max-w-sm rounded-2xl border border-stone-300 bg-white p-8 shadow-sm">
         <div className="mb-7">
           <AppBrand />
-          <h1 className="mt-3 text-xl font-bold">Chào mừng đến aiteams</h1>
+          <h1 className="mt-3 text-xl font-bold">Chào mừng đến 1Teams</h1>
           <p className="mt-2 text-xs text-stone-500">
             Đăng nhập để mở workspace của bạn.
           </p>

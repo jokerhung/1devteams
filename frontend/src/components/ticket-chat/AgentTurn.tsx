@@ -3,6 +3,7 @@ import { eventDate } from "./time";
 import type { Agent } from "@/lib/types";
 import { Logo } from "@/components/ui-app/primitives";
 import { TurnDetails } from "./TurnDetails";
+import { TurnProgress } from "./TurnProgress";
 import { BrowserReports } from "./BrowserReports";
 import { MarkdownContent } from "./blocks/MarkdownContent";
 import { InlineConfirmBox } from "./InlineConfirmBox";
@@ -88,11 +89,7 @@ export function AgentTurn({
           api={api}
           onLog={onLog}
         />
-        {running && (
-          <p className="mt-2 animate-pulse text-xs text-stone-400">
-            {turn.agent} đang làm việc <span>● ● ●</span>
-          </p>
-        )}
+        {running && <TurnProgress ticketId={ticketId} turn={turn} />}
         {turn.failed && (
           <p className="text-xs text-red-700">
             Lượt làm việc gặp lỗi; xem log để biết chi tiết.

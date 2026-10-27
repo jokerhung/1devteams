@@ -248,6 +248,10 @@ test("Sidebar keeps projects independently expanded, name clicks preserve order,
     </WorkspaceToolsProvider>,
   );
   await screen.findByRole("link", { name: "Project 6" });
+  const agentChat = screen.getByRole("button", { name: "Chat với AI Agent" });
+  expect(agentChat).toHaveAttribute("aria-pressed", "false");
+  await user.click(agentChat);
+  expect(agentChat).toHaveAttribute("aria-pressed", "true");
   await user.click(
     screen.getByRole("button", { name: "Mở project Project 6" }),
   );

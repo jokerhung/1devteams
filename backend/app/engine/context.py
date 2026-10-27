@@ -57,6 +57,8 @@ class RunContext:
             if ticket is None:
                 raise ValueError("Ticket không tồn tại")
             ticket.status, ticket.current_node_id = status, node_id
+            if status == "RUNNING" and result is None and "error" in ticket.result:
+                result = {key: value for key, value in ticket.result.items() if key != "error"}
             if result is not None:
                 ticket.result = result
             await db.commit()

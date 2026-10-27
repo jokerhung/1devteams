@@ -732,6 +732,7 @@ def make_node(node: Node, agents: dict[str, AgentRuntimeConfig]) -> Callable[...
             "gate_counts": counts,
             "cursors": cursors,
             "wrote_files": wrote,
+            "error": None,
             "approval": False if cfg.permission_profile.allow_write else state.get("approval", False),
             "user_inputs": inputs,
         }

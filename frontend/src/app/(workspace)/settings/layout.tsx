@@ -2,9 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, ClipboardList, Plug, Settings2 } from "lucide-react";
+import {
+  Activity,
+  ClipboardList,
+  FolderOpen,
+  Plug,
+  Settings2,
+} from "lucide-react";
 
 const sections = [
+  { value: "workspaces", label: "Thư mục", icon: FolderOpen },
   { value: "adapters", label: "Adapter", icon: Plug },
   { value: "operations", label: "Vận hành", icon: Activity },
   { value: "audit", label: "Nhật ký", icon: ClipboardList },
@@ -28,7 +35,7 @@ export default function SettingsLayout({
             Settings
           </h1>
           <p className="mt-1 text-sm text-stone-500">
-            Quản lý adapter, theo dõi vận hành và hoạt động hệ thống.
+            Quản lý thư mục truy cập, adapter và hoạt động hệ thống.
           </p>
         </div>
       </header>

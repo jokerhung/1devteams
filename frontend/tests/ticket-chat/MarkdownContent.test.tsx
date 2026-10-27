@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { MarkdownContent } from "@/components/ticket-chat/blocks/MarkdownContent";
 
@@ -11,6 +12,47 @@ beforeEach(() => {
     '<pre class="shiki"><code>highlighted code</code></pre>',
   );
 });
+
+it.each([
+  [
+    "![Screenshot](https://example.test/result.png)",
+    "https://example.test/result.png",
+  ],
+  [
+    "[Screenshot](https://example.test/result.png)",
+    "https://example.test/result.png",
+  ],
+  [
+    "[![Screenshot](https://example.test/result.png)](https://example.test/result.png)",
+    "https://example.test/result.png",
+  ],
+  [
+    "![Screenshot](data:image/png;base64,iVBORw0KGgo=)",
+    "data:image/png;base64,iVBORw0KGgo=",
+  ],
+  ["![Screenshot](/api/attachments/a1)", "/api/backend/attachments/a1"],
+])(
+  "opens markdown image in a popup without a new-tab link: %s",
+  async (text, src) => {
+    const user = userEvent.setup();
+    const { container } = render(<MarkdownContent text={text} />);
+    expect(container.querySelector('a[target="_blank"]')).toBeNull();
+    await user.click(
+      screen.getByRole("button", { name: "Phóng to Screenshot" }),
+    );
+    const popup = await screen.findByRole("dialog", { name: "Screenshot" });
+    expect(
+      within(popup).getByRole("img", { name: "Ảnh phóng to: Screenshot" }),
+    ).toHaveAttribute("src", src);
+    expect(
+      within(popup).getByRole("link", { name: "Tải ảnh xuống" }),
+    ).toHaveAttribute("download");
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+  },
+);
 
 it("keeps highlighted code mounted when other message content changes", async () => {
   const code = "```ts\nconst value = 1;\n```";

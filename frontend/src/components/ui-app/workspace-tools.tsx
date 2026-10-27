@@ -13,12 +13,15 @@ import { TerminalDock } from "@/components/ticket-chat/TerminalDock";
 import { WorkspaceFiles } from "@/components/ticket-chat/WorkspaceFiles";
 import { allProjects } from "@/lib/projects";
 import { keys } from "@/lib/query-keys";
+import { AgentChat } from "./agent-chat";
 
 type Tools = {
   terminalOpen: boolean;
   filesOpen: boolean;
+  chatOpen: boolean;
   toggleTerminal: () => void;
   toggleFiles: () => void;
+  toggleChat: () => void;
 };
 const Context = createContext<Tools | null>(null);
 export function useWorkspaceTools() {
@@ -30,13 +33,16 @@ export function useWorkspaceTools() {
 export function WorkspaceToolsProvider({ children }: { children: ReactNode }) {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   return (
     <Context.Provider
       value={{
         terminalOpen,
         filesOpen,
+        chatOpen,
         toggleTerminal: () => setTerminalOpen((v) => !v),
         toggleFiles: () => setFilesOpen((v) => !v),
+        toggleChat: () => setChatOpen((v) => !v),
       }}
     >
       {children}
@@ -127,6 +133,7 @@ export function WorkspaceToolsArea({ children }: { children: ReactNode }) {
             onClose={tools.toggleFiles}
           />
         )}
+        <AgentChat open={tools.chatOpen} onClose={tools.toggleChat} />
       </div>
     </div>
   );

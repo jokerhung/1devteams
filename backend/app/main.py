@@ -20,6 +20,7 @@ from starlette.exceptions import HTTPException  # noqa: E402
 from app.acp.pool import ACPProcessPool, create_session  # noqa: E402
 from app.acp.pty_manager import PTYManager  # noqa: E402
 from app.api import (  # noqa: E402
+    agent_chat,
     agents,
     assets,
     auth,
@@ -32,6 +33,7 @@ from app.api import (  # noqa: E402
     tickets,
     users,
     workflows,
+    workspace_settings,
 )
 from app.core.config import Settings, get_settings, resolve_binary  # noqa: E402
 from app.core.events import EventBus  # noqa: E402
@@ -43,6 +45,7 @@ from app.services.assets import cleanup_pending  # noqa: E402
 from app.services.connections import ConnectionLimiter  # noqa: E402
 from app.services.models_catalog import ModelsCatalog  # noqa: E402
 from app.services.seed import seed  # noqa: E402
+from app.services.workspace_settings import WorkspaceSettings  # noqa: E402
 from app.ws.terminal_ws import router as terminal_router  # noqa: E402
 from app.ws.ticket_ws import router as workflow_socket_router  # noqa: E402
 
@@ -58,6 +61,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         configure_logging()
+        app.state.workspace_settings = WorkspaceSettings(config)
+        await app.state.workspace_settings.load()
         bus = EventBus()
         bus.settings = config
         pool = ACPProcessPool(
@@ -134,7 +139,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await engine.dispose()
 
     app = FastAPI(
-        title="aiTeams",
+        title="1Teams",
         version="0.3.0",
         lifespan=lifespan,
         responses={
@@ -146,6 +151,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         auth.router,
         users.router,
         agents.router,
+        agent_chat.router,
         teams.router,
         projects.router,
         workflows.router,
@@ -154,6 +160,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         preferences.router,
         assets.router,
         operations.router,
+        workspace_settings.router,
     ]:
         app.include_router(router, prefix="/api")
     app.include_router(realtime.router)

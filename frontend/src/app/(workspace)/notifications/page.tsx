@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Bell, CircleHelp } from "lucide-react";
 import { apiFetch, send } from "@/lib/api";
 import type { Notice, Page } from "@/lib/types";
+import { BrowserNotifications } from "@/components/ui-app/browser-notifications";
 import {
   EmptyState,
   ErrorState,
@@ -73,6 +74,7 @@ export default function NotificationsPage() {
           Đánh dấu đã đọc
         </button>
       </PageHeader>
+      <BrowserNotifications />
       <div
         role="tablist"
         aria-label="Thông báo"

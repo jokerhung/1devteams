@@ -303,7 +303,51 @@ class TicketRunner:
                     fail(422, "Mention không thuộc effective agents", "invalid_mention")
                 project = await db.get(Project, ticket.project_id)
             ctx = self.context(ticket, project)
+            if ticket.status == "FAILED" and await self.resume_failed_agent(ticket, agent_id):
+                return
             self.adhoc_tasks[tid] = asyncio.create_task(self.execute_adhoc(ticket, ctx, agent_id, text))
+
+    async def resume_failed_agent(self, ticket: Ticket, agent_id: str) -> bool:
+        """Retry a mention of the failed agent within its workflow, under the action lock."""
+        async with self.sessions() as db:
+            version = await db.scalar(
+                select(WorkflowVersion).where(
+                    WorkflowVersion.workflow_id == ticket.workflow_id,
+                    WorkflowVersion.version == ticket.workflow_version,
+                )
+            )
+        if version is None:
+            return False
+        node = next(
+            (
+                node
+                for node in Graph.model_validate(version.graph).nodes
+                if node.id == ticket.current_node_id
+                and node.type == "agent"
+                and str(node.data.get("agent_id")) == agent_id
+            ),
+            None,
+        )
+        if node is None:
+            return False
+        graph, ctx, _ = await self.load(ticket.id)
+        config = self.config(ticket.id, ctx)
+        snapshot = await graph.aget_state(config)
+        if (
+            not snapshot.values
+            or tuple(snapshot.next) != (node.id,)
+            or any(task.interrupts for task in snapshot.tasks)
+        ):
+            return False
+        await graph.aupdate_state(config, {"error": None})
+        await ctx.emit(
+            "log",
+            "Tiếp tục bước agent bị lỗi trong workflow. Kết quả hợp lệ mới sẽ thay thế "
+            "lỗi cũ và tự động bàn giao theo flow.",
+            node_id=node.id,
+        )
+        self.schedule(ticket.id, graph, ctx, None)
+        return True
 
     async def execute_adhoc(self, ticket: Ticket, ctx: RunContext, aid: str, text: str) -> None:
         from uuid import uuid4

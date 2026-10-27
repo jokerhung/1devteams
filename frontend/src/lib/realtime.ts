@@ -2,6 +2,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { alertNewNotification } from "./notification-alerts";
 // Share sidebar channels within each tab to leave HTTP connections available for actions.
 const subscribers = new Map<string, Set<(event: MessageEvent) => void>>();
 let sidebarSource: EventSource | undefined;
@@ -16,7 +17,15 @@ function reconnectSidebar() {
   );
   sidebarSource.onmessage = (event) => {
     try {
-      const channel = JSON.parse(event.data).channel;
+      const frame = JSON.parse(event.data);
+      const channel = frame.channel;
+      const data = frame.type === "event" ? frame.data : frame;
+      if (
+        channel === "users/me" &&
+        data.event_type === "notification_created"
+      ) {
+        alertNewNotification(data.notification);
+      }
       for (const handler of subscribers.get(channel) || []) handler(event);
     } catch {
       /* Invalid frames are recovered by reconnect/refetch. */
