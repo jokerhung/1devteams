@@ -140,6 +140,7 @@ def main():
     parser.add_argument("--enable-remote-terminal", action="store_true")
     parser.add_argument("--skip-providers", action="store_true")
     parser.add_argument("--skip-browser", action="store_true")
+    parser.add_argument("--no-start", action="store_true", help="Install without starting the web app")
     args = parser.parse_args()
     if (
         not all(1 <= p <= 65535 for p in [args.frontend_port, args.backend_port])
@@ -162,7 +163,8 @@ def main():
     )
     run([uv, "sync", "--project", ROOT / "backend", "--python", "3.12", "--frozen"], env=env)
     python = ROOT / "backend/.venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    run([python, ROOT / "scripts/install/initialize.py", *sys.argv[1:]], env=env)
+    init_args = [arg for arg in sys.argv[1:] if arg != "--no-start"]
+    run([python, ROOT / "scripts/install/initialize.py", *init_args], env=env)
     state = json.loads((ROOT / ".tools/install-state.json").read_text())
     env["BACKEND_URL"] = f"http://127.0.0.1:{state['backend_port']}"
     env["NEXT_PUBLIC_API_URL"] = env["BACKEND_URL"]
@@ -193,18 +195,23 @@ def main():
         json.dumps({"node": str(node), "git": git}, indent=2), encoding="utf-8"
     )
     print("\nInstallation complete. Agents, teams and templates are ready.")
-    print(f"Start: {python} {ROOT / 'scripts/install/run.py'}")
+    print(f'Restart later: "{python}" "{ROOT / "scripts/install/run.py"}"')
     print("Open Settings > Adapters to log in to Claude/Codex. No provider credentials were created.")
     if not args.trust_native_agents:
         print(
             "Native agents require TRUSTED_NATIVE_ACP=true in backend/.env "
             "after reviewing their OS-level permissions."
         )
+    if not args.no_start:
+        print("Starting 1devTeams. Keep this terminal open; Ctrl+C stops the services.", flush=True)
+        run([python, ROOT / "scripts/install/run.py"], env=env)
 
 
 if __name__ == "__main__":
     try:
         main()
+    except KeyboardInterrupt:
+        print("\nStopped by user.")
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         print(f"Installation stopped: {error}", file=sys.stderr)
         sys.exit(1)

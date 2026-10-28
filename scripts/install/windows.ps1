@@ -10,11 +10,12 @@ param(
     [switch]$EnableRemoteTerminal,
     [switch]$SkipProviders,
     [switch]$SkipBrowser,
+    [switch]$NoStart,
     [switch]$Help
 )
 $ErrorActionPreference = 'Stop'
 if ($Help) {
-    Write-Host 'Usage: powershell -ExecutionPolicy Bypass -File scripts/install/windows.ps1 [-AdminEmail email] [-Workspace path] [-PublicUrl http://host:3060] [-TrustNativeAgents] [-EnableRemoteTerminal] [-SkipProviders] [-SkipBrowser]'
+    Write-Host 'Usage: powershell -ExecutionPolicy Bypass -File scripts/install/windows.ps1 [-AdminEmail email] [-Workspace path] [-PublicUrl http://host:3060] [-TrustNativeAgents] [-EnableRemoteTerminal] [-SkipProviders] [-SkipBrowser] [-NoStart]'
     exit 0
 }
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -63,5 +64,6 @@ if ($TrustNativeAgents) { $arguments += '--trust-native-agents' }
 if ($EnableRemoteTerminal) { $arguments += '--enable-remote-terminal' }
 if ($SkipProviders) { $arguments += '--skip-providers' }
 if ($SkipBrowser) { $arguments += '--skip-browser' }
+if ($NoStart) { $arguments += '--no-start' }
 & $uvPath run --no-project --python 3.12 (Join-Path $PSScriptRoot 'install.py') @arguments
 if ($LASTEXITCODE -ne 0) { throw 'Installation failed. Correct the error above and rerun.' }

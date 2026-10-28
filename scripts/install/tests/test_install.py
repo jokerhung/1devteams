@@ -184,14 +184,18 @@ def test_bootstrap_default_does_not_weaken_normal_password_rules():
     asyncio.run(scenario())
 
 
-def test_install_always_uses_repo_backend_venv(tmp_path, monkeypatch):
+@pytest.mark.parametrize("no_start", [False, True])
+def test_install_always_uses_repo_backend_venv(tmp_path, monkeypatch, no_start):
     initializer.configure(tmp_path, options())
     monkeypatch.setattr(installer, "ROOT", tmp_path)
     monkeypatch.setattr(installer, "preflight_ports", lambda *args: None)
     monkeypatch.setattr(installer, "ensure_node", lambda: tmp_path / "node")
     monkeypatch.setattr(installer, "npm_command", lambda node: [node, "npm-cli.js"])
     monkeypatch.setattr(installer.shutil, "which", lambda name: str(tmp_path / name))
-    monkeypatch.setattr(installer.sys, "argv", ["install.py", "--skip-providers", "--skip-browser"])
+    arguments = ["install.py", "--skip-providers", "--skip-browser"]
+    if no_start:
+        arguments.append("--no-start")
+    monkeypatch.setattr(installer.sys, "argv", arguments)
     monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", str(tmp_path / "unrelated-environment"))
     calls = []
     monkeypatch.setattr(installer, "run", lambda args, **kwargs: calls.append((args, kwargs)))
@@ -203,6 +207,12 @@ def test_install_always_uses_repo_backend_venv(tmp_path, monkeypatch):
         tmp_path / "backend/.venv" / ("Scripts/python.exe" if installer.os.name == "nt" else "bin/python")
     )
     assert calls[1][0][:2] == [python, tmp_path / "scripts/install/initialize.py"]
+    assert "--no-start" not in calls[1][0]
+    startup = [call for call in calls if tmp_path / "scripts/install/run.py" in call[0]]
+    assert len(startup) == (0 if no_start else 1)
+    if not no_start:
+        assert calls[-1][0] == [python, tmp_path / "scripts/install/run.py"]
+        assert any("build" in call[0] for call in calls[:-1])
 
 
 def test_empty_bootstrap_password_rejected(tmp_path):

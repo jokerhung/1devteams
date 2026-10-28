@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "${1:-}" == '--help' ]]; then
-  printf '%s\n' 'Usage: bash scripts/install/linux.sh [--admin-email EMAIL] [--workspace PATH] [--public-url URL] [--trust-native-agents] [--enable-remote-terminal] [--skip-providers] [--skip-browser]'
+  printf '%s\n' 'Usage: bash scripts/install/linux.sh [--admin-email EMAIL] [--workspace PATH] [--public-url URL] [--trust-native-agents] [--enable-remote-terminal] [--skip-providers] [--skip-browser] [--no-start]'
   exit 0
 fi
 [[ "$(uname -s)" == Linux ]] || { printf '%s\n' 'Use the macOS or Windows installer for this OS.' >&2; exit 1; }

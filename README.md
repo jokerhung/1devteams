@@ -44,7 +44,23 @@ sinh secret ngẫu nhiên, migrate database và tạo sẵn:
 | 3 teams | Core Bugfix Squad, Feature Delivery Squad, Security Review Squad |
 | 4 templates | Blank, Fix Bug, Add Feature, Fix Bug + Security Review |
 
-### 2. Khởi chạy ứng dụng
+### 2. Truy cập web sau khi cài
+
+Cài thành công sẽ **tự khởi động backend và frontend**. Khi cả hai dịch vụ sẵn
+sàng, terminal in các URL truy cập, ví dụ (IP phụ thuộc máy):
+
+```text
+1devTeams is ready.
+  Localhost: http://localhost:3060
+  Network:   http://192.168.1.20:3060
+```
+
+Giữ terminal mở trong khi sử dụng; Ctrl+C dừng cả hai dịch vụ. Link IP dùng
+được khi thiết bị truy cập có kết nối LAN/VPN tới máy chủ và firewall cho phép
+cổng web. Nếu không phát hiện IP phù hợp, launcher vẫn in link localhost và
+báo rõ trạng thái mạng. Không tự mở firewall hoặc tạo public URL.
+
+Để khởi động lại sau khi đã dừng, dùng các lệnh dưới đây.
 
 Windows:
 
@@ -197,8 +213,10 @@ Launcher production mở frontend trên `0.0.0.0`, backend trên `127.0.0.1`.
 Browser gọi `/api/backend` cùng origin; Next.js proxy tới `BACKEND_URL`.
 
 1. Cấu hình firewall/mạng chỉ cho những máy được phép truy cập.
-2. Thêm origin frontend thực tế vào `CORS_ORIGINS`; tùy chọn `-PublicUrl` /
-   `--public-url` hỗ trợ việc này khi tạo cấu hình lần đầu.
+2. Launcher tự thêm localhost và các IP mạng cục bộ phát hiện được vào CORS
+   trong phiên chạy, giữ nguyên `.env` và các origin đã cấu hình. Với domain
+   riêng, thêm origin vào `CORS_ORIGINS`; `-PublicUrl` / `--public-url` hỗ trợ
+   việc này khi tạo cấu hình lần đầu.
 3. Với truy cập từ xa, đặt HTTPS/reverse proxy phía trước web và cho phép
    WebSocket Upgrade tại `/ws/terminal/{project_id}`.
 
@@ -220,6 +238,8 @@ daemon độc lập giữ shell qua restart.
 
 Dừng ứng dụng rồi chạy script OS trong `scripts/install/` từ source đã có.
 Cấu hình cũ và dữ liệu mẫu đã chỉnh được giữ lại; bộ cài không reset Owner.
+Mặc định cài xong sẽ khởi động web; dùng `-NoStart` (Windows) hoặc `--no-start`
+(Linux/macOS) nếu chỉ muốn cài/build mà không chạy dịch vụ.
 Khi đổi cổng, cập nhật `.env`, URL frontend và CORS, rồi build lại để rewrite
 WebSocket dùng đúng backend. Xem [hướng dẫn chi tiết](scripts/install/README.md).
 

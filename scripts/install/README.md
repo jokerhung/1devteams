@@ -85,6 +85,9 @@ Không cần Homebrew. Nếu thiếu Apple Command Line Tools, hoàn tất hộp
    `123456`. Database lưu hash của mật khẩu, không lưu mật khẩu thuần.
 4. Migrate SQLite tại `backend/data/aiteams.db`, tạo dữ liệu mẫu, build frontend.
    File cấu hình mới chỉ cấp quyền đọc/ghi cho tài khoản cài đặt.
+5. Tự khởi động backend/frontend; sau khi health check thành công, in URL
+   localhost và các IP mạng cục bộ để truy cập. Giữ terminal mở để web chạy;
+   Ctrl+C dừng cả hai dịch vụ. Dùng `-NoStart` / `--no-start` để bỏ bước này.
 
 Dữ liệu sẵn có trên cài đặt mới:
 
@@ -99,6 +102,21 @@ Templates được lưu vào database và gắn đúng agent; bước Git releas
 người dùng xác nhận. Bộ cài không tự tạo project/ticket hoặc chạy agent.
 
 ## Khởi chạy và đăng nhập
+
+Bộ cài tự khởi động web sau khi hoàn tất. Terminal sẽ hiển thị, ví dụ:
+
+```text
+1devTeams is ready.
+  Localhost: http://localhost:3060
+  Network:   http://192.168.1.20:3060
+```
+
+IP/cổng phụ thuộc cấu hình thực tế. Khi có nhiều IP LAN/VPN, launcher có thể
+in nhiều link. Nếu không phát hiện IP phù hợp, localhost vẫn được in và có
+thông báo không phát hiện IP. Link chỉ xuất hiện sau khi backend và frontend
+sẵn sàng; lỗi khởi động chỉ tới log để chẩn đoán, không báo thành công giả.
+
+Để khởi động lại sau khi đã dừng, chạy từ thư mục source:
 
 Windows:
 
@@ -144,6 +162,7 @@ Nếu đã bỏ qua cài provider, cần cài chúng trước khi Login.
 | `-EnableRemoteTerminal` | `--enable-remote-terminal` | Cho phép terminal từ web |
 | `-SkipProviders` | `--skip-providers` | Không cài Claude Code/Codex CLI |
 | `-SkipBrowser` | `--skip-browser` | Không cài Chromium/dependency browser |
+| `-NoStart` | `--no-start` | Chỉ cài/build, không tự khởi động web |
 | `-Help` | `--help` | Xem cách dùng |
 
 Mặc định native agents và remote terminal **bị tắt**. Chỉ bật khi tin cậy
@@ -160,7 +179,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install/windows.ps1 
 ```
 
 `--public-url` chỉ cấu hình CORS, không thiết lập DNS/TLS/firewall. Web lắng
-nghe trên `0.0.0.0`, backend chỉ trên loopback. Không mở trực tiếp ra Internet;
+nghe trên `0.0.0.0`, backend chỉ trên loopback. Launcher tự thêm localhost và
+các IPv4 mạng cục bộ phát hiện được vào CORS trong môi trường tiến trình,
+không sửa `.env`, không xóa origin riêng và không dùng wildcard. Việc này giúp
+chat/terminal qua IP không bị chặn Origin; quyền agent/terminal vẫn giữ nguyên.
+Máy khách phải truy cập được LAN/VPN của máy chủ và firewall phải cho phép
+cổng frontend. Không tự mở port hoặc tạo public URL. Không mở trực tiếp ra Internet;
 khi triển khai từ xa cần HTTPS, reverse proxy hỗ trợ WebSocket và kiểm soát
 truy cập phù hợp.
 

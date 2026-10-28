@@ -1,6 +1,7 @@
 """Start the installed production build on all three platforms; Ctrl+C stops both services."""
 
 import argparse
+import ipaddress
 import json
 import os
 import signal
@@ -19,6 +20,63 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from app.core.config import Settings  # noqa: E402
+
+
+def local_ipv4_addresses():
+    """Discover local interface addresses without an external IP lookup service."""
+    candidates = set()
+    try:
+        candidates.update(
+            item[4][0]
+            for item in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET, socket.SOCK_STREAM)
+        )
+    except OSError:
+        pass
+    try:
+        # UDP connect selects the default route; no packet is sent (no send/recv).
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("192.0.2.1", 9))
+            candidates.add(probe.getsockname()[0])
+    except OSError:
+        pass
+    addresses = []
+    for candidate in candidates:
+        try:
+            address = ipaddress.IPv4Address(candidate)
+            if address.is_loopback or address.is_unspecified or address.is_multicast or address.is_link_local:
+                continue
+            # Only advertise addresses actually assigned to this host, not remote DNS results.
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                probe.bind((str(address), 0))
+            addresses.append(str(address))
+        except (OSError, ValueError):
+            continue
+    return sorted(addresses, key=ipaddress.IPv4Address)
+
+
+def access_urls(frontend, addresses):
+    return [f"http://localhost:{frontend}", *[f"http://{address}:{frontend}" for address in addresses]]
+
+
+def configure_origins(env, frontend, addresses):
+    origins = [value.strip() for value in env.get("CORS_ORIGINS", "").split(",") if value.strip()]
+    origins.extend(access_urls(frontend, addresses))
+    origins.append(f"http://127.0.0.1:{frontend}")
+    # Runtime only: preserve backend/.env and custom domains, never allow wildcard origins.
+    env["CORS_ORIGINS"] = ",".join(dict.fromkeys(origins))
+
+
+def print_access_urls(frontend, addresses):
+    urls = access_urls(frontend, addresses)
+    print("\n1devTeams is ready.", flush=True)
+    print(f"  Localhost: {urls[0]}", flush=True)
+    for url in urls[1:]:
+        print(f"  Network:   {url}", flush=True)
+    if not addresses:
+        print("  Network: no usable local IPv4 address detected.", flush=True)
+    print("Network access requires a reachable LAN/VPN and an allowed firewall port.", flush=True)
+    print("Change the default Owner password before allowing network access.", flush=True)
+    print("Keep this terminal open. Ctrl+C stops both services.", flush=True)
 
 
 def stop(process):
@@ -69,6 +127,8 @@ def main():
             if value is not None
         }
     )
+    addresses = local_ipv4_addresses()
+    configure_origins(env, frontend, addresses)
     env["BACKEND_URL"] = f"http://127.0.0.1:{backend}"
     env["NEXT_PUBLIC_API_URL"] = env["BACKEND_URL"]
     env["NEXT_DIST_DIR"] = ".next-build"
@@ -135,7 +195,7 @@ def main():
             if time.monotonic() >= deadline:
                 raise TimeoutError(f"Services were not ready within 90 seconds. See {logs}")
             time.sleep(0.5)
-        print(f"1devTeams ready: http://localhost:{frontend}. Ctrl+C stops both services.", flush=True)
+        print_access_urls(frontend, addresses)
         if args.check:
             return
         if not args.no_open:
