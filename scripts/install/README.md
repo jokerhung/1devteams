@@ -202,19 +202,20 @@ Nếu đã bỏ qua cài provider, cần cài chúng trước khi Login.
 | `-FrontendPort 3060` | `--frontend-port 3060` | Cổng web |
 | `-BackendPort 8060` | `--backend-port 8060` | Cổng backend |
 | `-PublicUrl URL` | `--public-url URL` | Thêm origin truy cập từ LAN/domain vào CORS |
-| `-TrustNativeAgents` | `--trust-native-agents` | Cho phép native Claude/Codex chạy với quyền OS user |
-| `-EnableRemoteTerminal` | `--enable-remote-terminal` | Cho phép terminal từ web |
+| `-TrustNativeAgents:$false` | `--no-trust-native-agents` | Tắt native Claude/Codex khi cài mới (mặc định bật) |
+| `-EnableRemoteTerminal:$false` | `--no-enable-remote-terminal` | Tắt terminal từ web khi cài mới (mặc định bật) |
 | `-SkipProviders` | `--skip-providers` | Không cài Claude Code/Codex CLI |
 | `-SkipBrowser` | `--skip-browser` | Không cài Chromium/dependency browser |
 | `-NoStart` | `--no-start` | Chỉ cài/build, không tự khởi động web |
 | `-Help` | `--help` | Xem cách dùng |
 
-Mặc định native agents và remote terminal **bị tắt**. Chỉ bật khi tin cậy
-workspace và người sử dụng: native tools có quyền của tài khoản hệ điều hành,
-không được sandbox bởi permission profile trong giao diện. Có thể bật sau
-bằng `TRUSTED_NATIVE_ACP=true` / `ENABLE_REMOTE_TERMINAL=true` trong
-`backend/.env`, rồi khởi động lại. Nếu bỏ qua Chromium, Browser Worker sẽ
-không sẵn sàng cho đến khi cài browser.
+Khi cài mới, **native agents và remote terminal được bật sẵn** bằng
+`TRUSTED_NATIVE_ACP=true` và `ENABLE_REMOTE_TERMINAL=true` trong `backend/.env`.
+File cấu hình đã tồn tại vẫn được giữ nguyên khi cài lại/cập nhật. Với bản cài
+cũ đang tắt tools, đổi hai giá trị này thành `true` rồi khởi động lại server.
+Quyền tài khoản, phạm vi thư mục và permission profile theo vai trò agent vẫn
+được áp dụng ở các lớp tương ứng; native tools chạy với quyền OS user.
+Browser/Chromium cũng được cài mặc định; `--skip-browser` bỏ qua bước này.
 
 Ví dụ cài máy nội bộ đã tin cậy:
 

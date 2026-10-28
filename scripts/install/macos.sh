@@ -4,7 +4,7 @@ if ! pwd -P >/dev/null 2>&1; then
   cd -- "${HOME:?HOME is required}"
 fi
 if [[ "${1:-}" == '--help' ]]; then
-  printf '%s\n' 'Usage: bash scripts/install/macos.sh [--admin-email EMAIL] [--workspace PATH] [--public-url URL] [--trust-native-agents] [--enable-remote-terminal] [--skip-providers] [--skip-browser] [--no-start]'
+  printf '%s\n' 'Usage: bash scripts/install/macos.sh [--admin-email EMAIL] [--workspace PATH] [--public-url URL] [--no-trust-native-agents] [--no-enable-remote-terminal] [--skip-providers] [--skip-browser] [--no-start]. Native tools and terminal are enabled by default on fresh installs.'
   exit 0
 fi
 [[ "$(uname -s)" == Darwin ]] || { printf '%s\n' 'Use the Linux or Windows installer for this OS.' >&2; exit 1; }

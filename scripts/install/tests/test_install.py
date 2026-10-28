@@ -30,8 +30,8 @@ def options(**overrides):
                 backend_port=8060,
                 public_url="",
                 workspace="",
-                trust_native_agents=False,
-                enable_remote_terminal=False,
+                trust_native_agents=True,
+                enable_remote_terminal=True,
             ),
             **overrides,
         }
@@ -66,8 +66,8 @@ def test_config_round_trip_and_preserve_existing(tmp_path):
     config = initializer.dotenv_values(root / "backend/.env", interpolate=False)
     assert config["ALLOWED_WORKSPACE_ROOTS"] == args.workspace
     assert "https://teams.example.com" in config["CORS_ORIGINS"]
-    assert config["TRUSTED_NATIVE_ACP"] == "false"
-    assert config["ENABLE_REMOTE_TERMINAL"] == "false"
+    assert config["TRUSTED_NATIVE_ACP"] == "true"
+    assert config["ENABLE_REMOTE_TERMINAL"] == "true"
     assert config["BOOTSTRAP_ADMIN_EMAIL"] == "owner@example.com"
     assert config["BOOTSTRAP_ADMIN_PASSWORD"] == "123456"
     initializer.Fernet(config["APP_SECRET_KEY"].encode())
@@ -84,9 +84,12 @@ def test_invalid_origin_does_not_create_config(tmp_path):
 
 
 def test_explicit_permissions(tmp_path):
-    initializer.configure(tmp_path, options(trust_native_agents=True, enable_remote_terminal=True))
+    initializer.configure(tmp_path, options(trust_native_agents=False, enable_remote_terminal=False))
     values = initializer.dotenv_values(tmp_path / "backend/.env")
-    assert values["TRUSTED_NATIVE_ACP"] == values["ENABLE_REMOTE_TERMINAL"] == "true"
+    assert values["TRUSTED_NATIVE_ACP"] == values["ENABLE_REMOTE_TERMINAL"] == "false"
+    before = (tmp_path / "backend/.env").read_bytes()
+    initializer.configure(tmp_path, options())
+    assert (tmp_path / "backend/.env").read_bytes() == before
 
 
 def test_settings_never_inherit_unrelated_environment(monkeypatch):
@@ -97,6 +100,27 @@ def test_settings_never_inherit_unrelated_environment(monkeypatch):
     assert settings.database_url.startswith("sqlite")
     assert settings.checkpoint_postgres_url is None
     assert not settings.trusted_native_acp
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_initializer_cli_tool_defaults_and_explicit_disable(tmp_path, monkeypatch, enabled):
+    monkeypatch.setattr(initializer, "ROOT", tmp_path)
+    flags = [] if enabled else ["--no-trust-native-agents", "--no-enable-remote-terminal"]
+    monkeypatch.setattr(initializer.sys, "argv", ["initialize.py", *flags])
+    captured = []
+
+    def configure(root, args):
+        captured.append(args)
+        return False
+
+    async def initialize(path):
+        return {}
+
+    monkeypatch.setattr(initializer, "configure", configure)
+    monkeypatch.setattr(initializer, "initialize", initialize)
+    initializer.main()
+    assert captured[0].trust_native_agents is enabled
+    assert captured[0].enable_remote_terminal is enabled
 
 
 def test_existing_port_in_use_stops_preflight(tmp_path):

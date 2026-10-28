@@ -98,8 +98,9 @@ không đổi mật khẩu của tài khoản đã tồn tại. Mật khẩu m�
 ### 3. Kết nối AI và tạo project
 
 1. Vào **Settings → Adapters → Login** để đăng nhập Claude/Codex.
-2. Chỉ với workspace tin cậy, bật `TRUSTED_NATIVE_ACP=true` trong `backend/.env`
-   rồi khởi động lại để cho phép native agents chạy. Mặc định quyền này bị tắt.
+2. Bộ cài mới bật sẵn native agents và terminal. Với cấu hình cũ đang tắt, đặt
+   `TRUSTED_NATIVE_ACP=true`, `ENABLE_REMOTE_TERMINAL=true` trong `backend/.env`
+   rồi khởi động lại server.
 3. Chọn thư mục được phép truy cập trong **Settings → Workspaces**, tạo project,
    chọn team/template và bắt đầu ticket; hoặc chat trực tiếp với từng agent.
 
@@ -167,8 +168,8 @@ flowchart LR
 - **Workspace:** cấu hình các thư mục ứng dụng được phép truy cập bằng
   `ALLOWED_WORKSPACE_ROOTS` hoặc Settings. Đây không phải sandbox cho mọi công
   cụ mà native agent có thể gọi.
-- **Quyền nguy hiểm là opt-in:** `TRUSTED_NATIVE_ACP` và `ENABLE_REMOTE_TERMINAL`
-  mặc định tắt. Khi bật, native tools/terminal có quyền của OS user chạy dịch vụ;
+- **Quyền tools:** Bộ cài mới bật `TRUSTED_NATIVE_ACP` và `ENABLE_REMOTE_TERMINAL`.
+  Cấu hình cũ được giữ nguyên. Native tools/terminal có quyền của OS user chạy dịch vụ;
   permission profile trong UI không thay thế cách ly hệ điều hành.
 - **Kiểm soát của con người:** các template có bước Git release yêu cầu xác nhận
   trước khi phát hành. Theo dõi log/diff và kiểm tra thay đổi trước khi duyệt.

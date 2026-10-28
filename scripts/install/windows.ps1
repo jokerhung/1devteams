@@ -6,8 +6,8 @@ param(
     [int]$FrontendPort = 3060,
     [int]$BackendPort = 8060,
     [string]$PublicUrl = '',
-    [switch]$TrustNativeAgents,
-    [switch]$EnableRemoteTerminal,
+    [switch]$TrustNativeAgents = $true,
+    [switch]$EnableRemoteTerminal = $true,
     [switch]$SkipProviders,
     [switch]$SkipBrowser,
     [switch]$NoStart,
@@ -15,7 +15,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 if ($Help) {
-    Write-Host 'Usage: powershell -ExecutionPolicy Bypass -File scripts/install/windows.ps1 [-AdminEmail email] [-Workspace path] [-PublicUrl http://host:3060] [-TrustNativeAgents] [-EnableRemoteTerminal] [-SkipProviders] [-SkipBrowser] [-NoStart]'
+    Write-Host 'Usage: powershell -ExecutionPolicy Bypass -File scripts/install/windows.ps1 [-AdminEmail email] [-Workspace path] [-PublicUrl http://host:3060] [-TrustNativeAgents:$false] [-EnableRemoteTerminal:$false] [-SkipProviders] [-SkipBrowser] [-NoStart]. Native tools and terminal are enabled by default on fresh installs.'
     exit 0
 }
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -60,8 +60,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Python installation failed.' }
 $arguments = @('--admin-email', $AdminEmail, '--frontend-port', "$FrontendPort", '--backend-port', "$BackendPort")
 if ($Workspace) { $arguments += @('--workspace', $Workspace) }
 if ($PublicUrl) { $arguments += @('--public-url', $PublicUrl) }
-if ($TrustNativeAgents) { $arguments += '--trust-native-agents' }
-if ($EnableRemoteTerminal) { $arguments += '--enable-remote-terminal' }
+if ($TrustNativeAgents) { $arguments += '--trust-native-agents' } else { $arguments += '--no-trust-native-agents' }
+if ($EnableRemoteTerminal) { $arguments += '--enable-remote-terminal' } else { $arguments += '--no-enable-remote-terminal' }
 if ($SkipProviders) { $arguments += '--skip-providers' }
 if ($SkipBrowser) { $arguments += '--skip-browser' }
 if ($NoStart) { $arguments += '--no-start' }
