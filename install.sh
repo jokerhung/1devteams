@@ -15,7 +15,7 @@ esac
 install_target="${ONEDEVTEAMS_INSTALL_DIR:-$HOME/1devTeams}"
 [[ "$install_target" == /* ]] || { printf '%s\n' 'ONEDEVTEAMS_INSTALL_DIR must be an absolute path.' >&2; exit 1; }
 if [[ -e "$install_target" || -L "$install_target" ]]; then
-  for required in scripts/install/run.py scripts/install/install.py .tools/runtime.json .env backend/.env; do
+  for required in scripts/install/run.py scripts/install/install.py .env backend/.env; do
     if [[ ! -f "$install_target/$required" ]]; then
       printf '%s\n' "Existing directory is not a complete installation: $install_target (missing $required). Nothing was overwritten." "Run bash scripts/install/$installer there to finish installing, or set ONEDEVTEAMS_INSTALL_DIR to a new directory." >&2
       exit 1

@@ -73,7 +73,8 @@ def test_windows_bootstrap_refuses_existing_directory(tmp_path):
     assert not list(target.iterdir())
 
 
-def test_windows_bootstrap_starts_installed_version_without_download(tmp_path):
+@pytest.mark.parametrize("missing_runtime", [False, True])
+def test_windows_bootstrap_starts_installed_version_without_download(tmp_path, missing_runtime):
     target = tmp_path / "existing installation"
     files = [
         "scripts/install/run.py",
@@ -84,6 +85,8 @@ def test_windows_bootstrap_starts_installed_version_without_download(tmp_path):
         "backend/.env",
         "backend/.venv/Scripts/python.exe",
     ]
+    if missing_runtime:
+        files.remove(".tools/runtime.json")
     for name in files:
         path = target / name
         path.parent.mkdir(parents=True, exist_ok=True)

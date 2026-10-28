@@ -47,8 +47,9 @@ File source đã được updater quản lý mà không còn trong bản sau s�
 file riêng không nằm trong danh sách quản lý được giữ lại. Lượt cập nhật đầu
 từ bản cũ chưa có danh sách này chỉ thay/thêm source, giữ file cũ không xác định.
 
-Nếu thư mục chưa cài xong (thiếu venv, runtime config hoặc
-cấu hình `.env`), bootstrap báo file thiếu và cách chạy bộ cài bên dưới.
+Thiếu `.tools/runtime.json` hoặc frontend build không chặn cập nhật: bộ cài
+build lại và tạo runtime config mới. Nếu thiếu venv hoặc cấu hình `.env`,
+bootstrap báo file thiếu và cách chạy bộ cài bên dưới.
 Thư mục không liên quan cũng không bị ghi đè. Nếu cài lỗi, source được giữ
 lại để tiếp tục cài; thư mục tải tạm được dọn sau khi tải/giải nén.
 

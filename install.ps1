@@ -9,7 +9,7 @@
         Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) '1devTeams'
     }
     if (Test-Path -LiteralPath $installTarget) {
-        foreach ($required in @('scripts/install/run.py', 'scripts/install/install.py', '.tools/runtime.json', '.env', 'backend/.env', 'backend/.venv/Scripts/python.exe')) {
+        foreach ($required in @('scripts/install/run.py', 'scripts/install/install.py', '.env', 'backend/.env', 'backend/.venv/Scripts/python.exe')) {
             if (-not (Test-Path -LiteralPath (Join-Path $installTarget $required) -PathType Leaf)) {
                 throw "Existing directory is not a complete installation: $installTarget (missing $required). Nothing was overwritten. Run scripts/install/windows.ps1 there to finish installing, or set ONEDEVTEAMS_INSTALL_DIR to a new directory."
             }

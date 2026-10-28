@@ -279,6 +279,8 @@ def apply_source(source, backup, protected):
 
 def main():
     os.chdir(ROOT)
+    # Old/unfinished installations may not have reached the final runtime.json step.
+    (ROOT / ".tools").mkdir(exist_ok=True)
     lock = ROOT / ".tools/update.lock"
     try:
         lock.mkdir()

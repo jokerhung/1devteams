@@ -179,7 +179,7 @@ def test_stop_only_verified_processes_and_descendants(tmp_path, monkeypatch):
 @pytest.mark.parametrize("failure", ["download", "build", None])
 def test_update_sequence_and_failure_preserves_data(tmp_path, monkeypatch, failure):
     root = tmp_path / "installed"
-    (root / ".tools").mkdir(parents=True)
+    root.mkdir(parents=True)
     (root / "scripts/install").mkdir(parents=True)
     (root / "scripts/install/install.py").write_text("def preflight_ports(*args): pass\n")
     db = root / "database.db"
