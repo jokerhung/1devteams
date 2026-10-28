@@ -56,3 +56,56 @@ def test_shell_extract_does_not_depend_on_repository_name(tmp_path, archive_root
     assert (target / f"scripts/install/{installer}").read_text() == "fixture"
     assert (target / "backend/uv.lock").read_text() == "fixture"
     assert "Source installed at:" in result.stdout
+
+
+@pytest.mark.parametrize("system", ["Linux", "Darwin"])
+@pytest.mark.parametrize("state", ["installed", "partial", "missing_venv", "startup_failure"])
+def test_shell_rerun_starts_existing_app_without_download(tmp_path, system, state):
+    target = tmp_path / "existing installation"
+    target.mkdir()
+    if state != "partial":
+        for name in (
+            "scripts/install/run.py",
+            ".tools/runtime.json",
+            "frontend/.next-build/BUILD_ID",
+            ".env",
+            "backend/.env",
+        ):
+            path = target / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("unchanged fixture")
+        if state != "missing_venv":
+            python = target / "backend/.venv/bin/python"
+            python.parent.mkdir(parents=True)
+            python.write_text(
+                '#!/bin/sh\nprintf "EXISTING_RUNNER_CALLED %s\\n" "$1"\n'
+                + ("exit 7\n" if state == "startup_failure" else "exit 0\n"),
+                encoding="utf-8",
+            )
+            python.chmod(0o700)
+    before = {file.relative_to(target): file.read_bytes() for file in target.rglob("*") if file.is_file()}
+    result = subprocess.run(
+        [
+            BASH,
+            "-c",
+            'uname() { printf "%s\\n" "$BOOTSTRAP_TEST_SYSTEM"; }\n'
+            'curl() { printf "UNEXPECTED_DOWNLOAD\\n"; return 99; }\n'
+            + (ROOT / "install.sh").read_text(encoding="utf-8"),
+        ],
+        env={**os.environ, "ONEDEVTEAMS_INSTALL_DIR": shell_path(target), "BOOTSTRAP_TEST_SYSTEM": system},
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
+    assert "UNEXPECTED_DOWNLOAD" not in result.stdout
+    assert "Downloading" not in result.stdout
+    if state in {"installed", "startup_failure"}:
+        assert result.returncode == (0 if state == "installed" else 7), result.stderr
+        assert "EXISTING_RUNNER_CALLED" in result.stdout
+        assert "scripts/install/run.py" in result.stdout
+    else:
+        assert result.returncode != 0
+        assert "finish installing" in result.stderr or "repair it" in result.stderr
+    assert {
+        file.relative_to(target): file.read_bytes() for file in target.rglob("*") if file.is_file()
+    } == before

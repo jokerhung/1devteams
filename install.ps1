@@ -9,7 +9,16 @@
         Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) '1devTeams'
     }
     if (Test-Path -LiteralPath $installTarget) {
-        throw "Destination already exists: $installTarget. Nothing was overwritten. Run scripts/install/windows.ps1 in that directory to retry, or set ONEDEVTEAMS_INSTALL_DIR to a new directory."
+        foreach ($required in @('scripts/install/run.py', '.tools/runtime.json', 'frontend/.next-build/BUILD_ID', '.env', 'backend/.env', 'backend/.venv/Scripts/python.exe')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $installTarget $required) -PathType Leaf)) {
+                throw "Existing directory is not a complete installation: $installTarget (missing $required). Nothing was overwritten. Run scripts/install/windows.ps1 there to finish installing, or set ONEDEVTEAMS_INSTALL_DIR to a new directory."
+            }
+        }
+        Write-Host "Starting the installed version at: $installTarget"
+        Write-Host 'No source or dependencies will be downloaded. Keep this terminal open; Ctrl+C stops the app.'
+        & (Join-Path $installTarget 'backend/.venv/Scripts/python.exe') (Join-Path $installTarget 'scripts/install/run.py')
+        if ($LASTEXITCODE -ne 0) { throw 'Could not start the installed app. Check the error above; no files were changed.' }
+        return
     }
     $downloadRoot = Join-Path ([IO.Path]::GetTempPath()) ('1devteams-install-' + [Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $downloadRoot | Out-Null

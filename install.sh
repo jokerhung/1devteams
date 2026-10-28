@@ -10,8 +10,16 @@ esac
 install_target="${ONEDEVTEAMS_INSTALL_DIR:-$HOME/1devTeams}"
 [[ "$install_target" == /* ]] || { printf '%s\n' 'ONEDEVTEAMS_INSTALL_DIR must be an absolute path.' >&2; exit 1; }
 if [[ -e "$install_target" || -L "$install_target" ]]; then
-  printf '%s\n' "Destination already exists: $install_target. Nothing was overwritten." "Run bash scripts/install/$installer there to retry, or set ONEDEVTEAMS_INSTALL_DIR to a new directory." >&2
-  exit 1
+  for required in scripts/install/run.py .tools/runtime.json frontend/.next-build/BUILD_ID .env backend/.env; do
+    if [[ ! -f "$install_target/$required" ]]; then
+      printf '%s\n' "Existing directory is not a complete installation: $install_target (missing $required). Nothing was overwritten." "Run bash scripts/install/$installer there to finish installing, or set ONEDEVTEAMS_INSTALL_DIR to a new directory." >&2
+      exit 1
+    fi
+  done
+  python="$install_target/backend/.venv/bin/python"
+  [[ -x "$python" ]] || { printf '%s\n' "Backend venv is missing or not executable. Run bash scripts/install/$installer in $install_target to repair it." >&2; exit 1; }
+  printf '%s\n' "Starting the installed version at: $install_target" 'No source or dependencies will be downloaded. Keep this terminal open; Ctrl+C stops the app.'
+  exec "$python" "$install_target/scripts/install/run.py"
 fi
 command -v curl >/dev/null || { printf '%s\n' 'curl is required to download the source.' >&2; exit 1; }
 command -v tar >/dev/null || { printf '%s\n' 'tar is required to extract the source.' >&2; exit 1; }

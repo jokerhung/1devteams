@@ -31,10 +31,16 @@ def run_bootstrap(tmp_path, target, archive_root="1devteams-main"):
             $ErrorActionPreference = 'Stop'
             function Invoke-WebRequest {
                 param([switch]$UseBasicParsing, $Uri, $OutFile)
+                Write-Output 'SOURCE_DOWNLOAD'
                 Copy-Item -LiteralPath $env:BOOTSTRAP_TEST_ARCHIVE -Destination $OutFile
             }
             function powershell.exe {
                 Write-Output ('INSTALLER_CALLED ' + ($args -join ' '))
+                $global:LASTEXITCODE = 0
+            }
+            $fakePython = Join-Path $env:ONEDEVTEAMS_INSTALL_DIR 'backend/.venv/Scripts/python.exe'
+            Set-Item -LiteralPath ('Function:' + $fakePython) -Value {
+                Write-Output ('EXISTING_RUNNER_CALLED ' + ($args -join ' '))
                 $global:LASTEXITCODE = 0
             }
             Get-Content -LiteralPath $env:BOOTSTRAP_TEST_SCRIPT -Raw | Invoke-Expression
@@ -62,5 +68,29 @@ def test_windows_bootstrap_refuses_existing_directory(tmp_path):
     target.mkdir()
     result = run_bootstrap(tmp_path, target)
     assert result.returncode != 0
-    assert "Destination already exists" in result.stderr
+    assert "not a complete installation" in result.stderr
+    assert "SOURCE_DOWNLOAD" not in result.stdout
     assert not list(target.iterdir())
+
+
+def test_windows_bootstrap_starts_installed_version_without_download(tmp_path):
+    target = tmp_path / "existing installation"
+    files = [
+        "scripts/install/run.py",
+        ".tools/runtime.json",
+        "frontend/.next-build/BUILD_ID",
+        ".env",
+        "backend/.env",
+        "backend/.venv/Scripts/python.exe",
+    ]
+    for name in files:
+        path = target / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("unchanged fixture")
+    result = run_bootstrap(tmp_path, target)
+    assert result.returncode == 0, result.stderr
+    assert "EXISTING_RUNNER_CALLED" in result.stdout
+    assert "scripts/install/run.py" in result.stdout.replace("\\", "/")
+    assert "SOURCE_DOWNLOAD" not in result.stdout
+    assert "INSTALLER_CALLED" not in result.stdout
+    assert all((target / name).read_text() == "unchanged fixture" for name in files)

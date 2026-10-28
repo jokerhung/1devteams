@@ -31,7 +31,10 @@ curl -fsSL https://raw.githubusercontent.com/jokerhung/1devteams/main/install.sh
 
 Thư mục mặc định: `%LOCALAPPDATA%\1devTeams` trên Windows, `$HOME/1devTeams`
 trên Linux/macOS. Có thể chọn đường dẫn tuyệt đối khác bằng biến
-`ONEDEVTEAMS_INSTALL_DIR`. Bootstrap không ghi đè thư mục đã tồn tại.
+`ONEDEVTEAMS_INSTALL_DIR`. Chạy lại cùng lệnh trên máy đã cài sẽ **khởi động
+ngay phiên bản hiện có**, rồi launcher in URL localhost/IP khi web sẵn sàng;
+không tải source mới, cài lại dependency hay ghi đè cấu hình. Nếu thư mục cài
+dở, bootstrap báo cách tiếp tục cài thay vì chạy hoặc ghi đè thư mục đó.
 
 Bộ cài tạo virtual environment riêng tại `backend/.venv` bằng uv, cài dependency
 backend vào venv (không cài Python package toàn hệ thống), build frontend,
@@ -236,7 +239,13 @@ daemon độc lập giữ shell qua restart.
 
 ### Chạy lại bộ cài
 
-Dừng ứng dụng rồi chạy script OS trong `scripts/install/` từ source đã có.
+Chạy lại lệnh một dòng `curl … | bash` / `irm … | iex` chỉ khởi động bản đã
+cài, **không nâng cấp**. Giữ terminal mở; Ctrl+C để dừng. Nếu app đã chạy trong
+terminal khác, tiếp tục dùng URL ở đó; launcher không tự dừng hoặc thay thế
+tiến trình đang chiếm cổng.
+
+Muốn cài lại dependency/build hoặc hoàn tất lần cài dở: dừng ứng dụng rồi
+chạy script OS trong `scripts/install/` từ source đã có.
 Cấu hình cũ và dữ liệu mẫu đã chỉnh được giữ lại; bộ cài không reset Owner.
 Mặc định cài xong sẽ khởi động web; dùng `-NoStart` (Windows) hoặc `--no-start`
 (Linux/macOS) nếu chỉ muốn cài/build mà không chạy dịch vụ.

@@ -21,9 +21,17 @@ curl -fsSL https://raw.githubusercontent.com/jokerhung/1devteams/main/install.sh
 
 Windows mặc định cài vào `%LOCALAPPDATA%\1devTeams`; Linux/macOS vào
 `$HOME/1devTeams`. Dùng biến môi trường `ONEDEVTEAMS_INSTALL_DIR` (đường dẫn
-tuyệt đối) để chọn thư mục khác. Bootstrap từ chối thư mục đã tồn tại,
-không ghi đè source/config/dữ liệu; nếu cài lỗi, source được giữ lại để chạy
-lại bộ cài bên dưới. Thư mục tải tạm được dọn sau khi tải/giải nén.
+tuyệt đối) để chọn thư mục khác. Nếu thư mục chứa bản đã cài hoàn chỉnh,
+chạy lại cùng lệnh sẽ **chạy ngay bản đang có** bằng Python trong
+`backend/.venv` và launcher `scripts/install/run.py`; không tải source hay
+cài dependency lại. Launcher in URL localhost/IP sau khi web sẵn sàng.
+Source/config/dữ liệu không bị ghi đè; database vẫn được ứng dụng sử dụng
+bình thường khi khởi động. Đây không phải lệnh nâng cấp lên bản mới.
+
+Nếu thư mục chưa cài xong (thiếu venv, runtime config, frontend build hoặc
+cấu hình `.env`), bootstrap báo file thiếu và cách chạy bộ cài bên dưới.
+Thư mục không liên quan cũng không bị ghi đè. Nếu cài lỗi, source được giữ
+lại để tiếp tục cài; thư mục tải tạm được dọn sau khi tải/giải nén.
 
 URL dùng nhánh `main` của `jokerhung/1devteams`: cần **push toàn bộ bộ cài lên
 GitHub và repository phải truy cập công khai** trước khi phân phối lệnh này.
@@ -190,6 +198,10 @@ truy cập phù hợp.
 
 ## Chạy lại / xử lý lỗi
 
+- Chạy lại lệnh bootstrap một dòng trên bản đã cài sẽ chỉ khởi động bản đó.
+  Nếu ứng dụng đang chạy trong terminal khác, dùng URL tại đó; launcher không
+  kill tiến trình hoặc tạo bản thứ hai trên cổng đang bận. Bản cũ chỉ có các
+  chức năng in URL của launcher đã cài; bootstrap không tự cập nhật launcher.
 - Dừng ứng dụng trước khi cài lại. Bộ cài từ chối nếu cổng web/backend đang
   được sử dụng; nó không tự kill tiến trình đang chạy.
 - File `.env` đã tồn tại được giữ nguyên, kể cả khi truyền tùy chọn khác.
