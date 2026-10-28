@@ -15,8 +15,27 @@
             }
         }
         Write-Host "Starting the installed version at: $installTarget"
-        Write-Host 'No source or dependencies will be downloaded. Keep this terminal open; Ctrl+C stops the app.'
-        & (Join-Path $installTarget 'backend/.venv/Scripts/python.exe') (Join-Path $installTarget 'scripts/install/run.py')
+        Write-Host 'App source and dependencies stay unchanged. Loading the latest startup helper in memory.'
+        $startupHelper = @'
+import runpy
+import sys
+import urllib.request
+from pathlib import Path
+
+launcher = Path(sys.argv[1]).resolve()
+sys.argv = [str(launcher)]
+helper_url = 'https://raw.githubusercontent.com/jokerhung/1devteams/main/scripts/install/run.py'
+try:
+    with urllib.request.urlopen(helper_url, timeout=20) as response:
+        source = response.read().decode('utf-8')
+except (OSError, UnicodeError) as error:
+    print(f'Could not load the latest startup helper ({error}). Using the installed launcher; older versions may not print LAN URLs.', flush=True)
+    runpy.run_path(str(launcher), run_name='__main__')
+else:
+    # Preserve the installed project root without writing over its launcher.
+    exec(compile(source, helper_url, 'exec'), {'__name__': '__main__', '__file__': str(launcher)})
+'@
+        & (Join-Path $installTarget 'backend/.venv/Scripts/python.exe') -c $startupHelper (Join-Path $installTarget 'scripts/install/run.py')
         if ($LASTEXITCODE -ne 0) { throw 'Could not start the installed app. Check the error above; no files were changed.' }
         return
     }

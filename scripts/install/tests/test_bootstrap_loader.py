@@ -1,0 +1,56 @@
+"""Old installations get current URL reporting without replacing installed files."""
+
+import io
+import sys
+import urllib.request
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[3]
+
+
+def startup_code():
+    shell = (ROOT / "install.sh").read_text(encoding="utf-8")
+    powershell = (ROOT / "install.ps1").read_text(encoding="utf-8")
+    shell_code = shell.split("<<'STARTUP_HELPER'\n", 1)[1].split("\nSTARTUP_HELPER", 1)[0]
+    windows_code = powershell.split("$startupHelper = @'\n", 1)[1].split("\n'@", 1)[0]
+    assert shell_code == windows_code
+    return shell_code
+
+
+@pytest.mark.parametrize("offline", [False, True])
+def test_startup_helper_uses_installed_root_and_preserves_old_launcher(
+    tmp_path, monkeypatch, capsys, offline
+):
+    launcher = tmp_path / "scripts/install/run.py"
+    launcher.parent.mkdir(parents=True)
+    original = "print('OLD_LAUNCHER_FALLBACK')\n"
+    launcher.write_text(original)
+    monkeypatch.setattr(sys, "argv", ["-", str(launcher)])
+    requests = []
+
+    def download(url, timeout):
+        requests.append(url)
+        assert timeout == 20
+        if offline:
+            raise OSError("Network unavailable")
+        return io.BytesIO(
+            b"from pathlib import Path\n"
+            b"assert __name__ == '__main__'\n"
+            b"print('LATEST_HELPER_ROOT', Path(__file__).resolve().parents[2])\n"
+            b"print('Localhost: http://localhost:3060; Network: http://192.168.1.20:3060')\n"
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", download)
+    exec(compile(startup_code(), "bootstrap-helper", "exec"), {})
+    output = capsys.readouterr().out
+    assert launcher.read_text() == original
+    assert requests == ["https://raw.githubusercontent.com/jokerhung/1devteams/main/scripts/install/run.py"]
+    if offline:
+        assert "older versions may not print LAN URLs" in output
+        assert "OLD_LAUNCHER_FALLBACK" in output
+    else:
+        assert str(tmp_path) in output
+        assert "Localhost: http://localhost:3060; Network: http://192.168.1.20:3060" in output
+        assert "OLD_LAUNCHER_FALLBACK" not in output

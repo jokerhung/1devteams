@@ -33,7 +33,10 @@ Thư mục mặc định: `%LOCALAPPDATA%\1devTeams` trên Windows, `$HOME/1devT
 trên Linux/macOS. Có thể chọn đường dẫn tuyệt đối khác bằng biến
 `ONEDEVTEAMS_INSTALL_DIR`. Chạy lại cùng lệnh trên máy đã cài sẽ **khởi động
 ngay phiên bản hiện có**, rồi launcher in URL localhost/IP khi web sẵn sàng;
-không tải source mới, cài lại dependency hay ghi đè cấu hình. Nếu thư mục cài
+không cập nhật source ứng dụng, cài lại dependency hay ghi đè cấu hình. Bootstrap
+nạp riêng launcher mới nhất từ GitHub vào bộ nhớ để bản cũ cũng có phần in
+IP LAN và cấu hình Origin; không ghi đè `scripts/install/run.py` đã cài. Nếu
+không tải được helper, script cảnh báo rồi dùng launcher cũ. Nếu thư mục cài
 dở, bootstrap báo cách tiếp tục cài thay vì chạy hoặc ghi đè thư mục đó.
 
 Bộ cài tạo virtual environment riêng tại `backend/.venv` bằng uv, cài dependency

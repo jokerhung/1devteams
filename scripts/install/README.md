@@ -23,8 +23,11 @@ Windows mặc định cài vào `%LOCALAPPDATA%\1devTeams`; Linux/macOS vào
 `$HOME/1devTeams`. Dùng biến môi trường `ONEDEVTEAMS_INSTALL_DIR` (đường dẫn
 tuyệt đối) để chọn thư mục khác. Nếu thư mục chứa bản đã cài hoàn chỉnh,
 chạy lại cùng lệnh sẽ **chạy ngay bản đang có** bằng Python trong
-`backend/.venv` và launcher `scripts/install/run.py`; không tải source hay
-cài dependency lại. Launcher in URL localhost/IP sau khi web sẵn sàng.
+`backend/.venv`; không cập nhật source ứng dụng hay cài dependency lại.
+Bootstrap tải riêng nội dung launcher mới nhất từ
+`scripts/install/run.py` trên GitHub vào bộ nhớ, chạy với thư mục gốc của bản
+đã cài để in URL localhost/IP và cấu hình CORS cho IP mạng. Không ghi đè file
+launcher trên máy. Link chỉ được in sau khi web sẵn sàng.
 Source/config/dữ liệu không bị ghi đè; database vẫn được ứng dụng sử dụng
 bình thường khi khởi động. Đây không phải lệnh nâng cấp lên bản mới.
 
@@ -200,8 +203,9 @@ truy cập phù hợp.
 
 - Chạy lại lệnh bootstrap một dòng trên bản đã cài sẽ chỉ khởi động bản đó.
   Nếu ứng dụng đang chạy trong terminal khác, dùng URL tại đó; launcher không
-  kill tiến trình hoặc tạo bản thứ hai trên cổng đang bận. Bản cũ chỉ có các
-  chức năng in URL của launcher đã cài; bootstrap không tự cập nhật launcher.
+  kill tiến trình hoặc tạo bản thứ hai trên cổng đang bận. Nếu không tải được
+  startup helper, có cảnh báo trước khi dùng launcher trên máy; launcher cũ
+  có thể chỉ in localhost. Khi đó kiểm tra mạng rồi chạy lại bootstrap.
 - Dừng ứng dụng trước khi cài lại. Bộ cài từ chối nếu cổng web/backend đang
   được sử dụng; nó không tự kill tiến trình đang chạy.
 - File `.env` đã tồn tại được giữ nguyên, kể cả khi truyền tùy chọn khác.

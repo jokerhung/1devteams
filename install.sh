@@ -18,8 +18,26 @@ if [[ -e "$install_target" || -L "$install_target" ]]; then
   done
   python="$install_target/backend/.venv/bin/python"
   [[ -x "$python" ]] || { printf '%s\n' "Backend venv is missing or not executable. Run bash scripts/install/$installer in $install_target to repair it." >&2; exit 1; }
-  printf '%s\n' "Starting the installed version at: $install_target" 'No source or dependencies will be downloaded. Keep this terminal open; Ctrl+C stops the app.'
-  exec "$python" "$install_target/scripts/install/run.py"
+  printf '%s\n' "Starting the installed version at: $install_target" 'App source and dependencies stay unchanged. Loading the latest startup helper in memory.'
+  exec "$python" - "$install_target/scripts/install/run.py" <<'STARTUP_HELPER'
+import runpy
+import sys
+import urllib.request
+from pathlib import Path
+
+launcher = Path(sys.argv[1]).resolve()
+sys.argv = [str(launcher)]
+helper_url = 'https://raw.githubusercontent.com/jokerhung/1devteams/main/scripts/install/run.py'
+try:
+    with urllib.request.urlopen(helper_url, timeout=20) as response:
+        source = response.read().decode('utf-8')
+except (OSError, UnicodeError) as error:
+    print(f'Could not load the latest startup helper ({error}). Using the installed launcher; older versions may not print LAN URLs.', flush=True)
+    runpy.run_path(str(launcher), run_name='__main__')
+else:
+    # Preserve the installed project root without writing over its launcher.
+    exec(compile(source, helper_url, 'exec'), {'__name__': '__main__', '__file__': str(launcher)})
+STARTUP_HELPER
 fi
 command -v curl >/dev/null || { printf '%s\n' 'curl is required to download the source.' >&2; exit 1; }
 command -v tar >/dev/null || { printf '%s\n' 'tar is required to extract the source.' >&2; exit 1; }

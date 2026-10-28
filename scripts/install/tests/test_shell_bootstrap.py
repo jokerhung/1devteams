@@ -78,7 +78,7 @@ def test_shell_rerun_starts_existing_app_without_download(tmp_path, system, stat
             python = target / "backend/.venv/bin/python"
             python.parent.mkdir(parents=True)
             python.write_text(
-                '#!/bin/sh\nprintf "EXISTING_RUNNER_CALLED %s\\n" "$1"\n'
+                '#!/bin/sh\nprintf "EXISTING_RUNNER_CALLED %s\\n" "$@"\n'
                 + ("exit 7\n" if state == "startup_failure" else "exit 0\n"),
                 encoding="utf-8",
             )
