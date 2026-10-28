@@ -16,6 +16,7 @@ import urllib.request
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 ARCHIVE = "https://github.com/jokerhung/1devteams/archive/refs/heads/main.zip"
@@ -240,6 +241,70 @@ def backup_data(folder, databases, data_dir):
     (folder / "restore-paths.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
 
+def recover_ports():
+    """Older source installs need no root .env; recover only its two port settings."""
+    if (ROOT / ".env").is_file():
+        # preflight_ports reads/validates that existing file; never rewrite it.
+        return 3060, 8060
+    code = textwrap.dedent("""\
+        import json, sys
+        from pathlib import Path
+        from dotenv import dotenv_values
+        root = Path(sys.argv[1])
+        allowed = {"FRONTEND_PORT", "BACKEND_PORT", "BACKEND_URL", "NEXT_PUBLIC_API_URL", "CORS_ORIGINS"}
+        result = {}
+        for name in ("backend/.env", "frontend/.env", "frontend/.env.production",
+                     "frontend/.env.local", "frontend/.env.production.local"):
+            path = root / name
+            if path.is_file():
+                result.update({k: v for k, v in dotenv_values(path, interpolate=False).items()
+                               if k in allowed and v})
+        print(json.dumps(result))
+    """)
+    values = json.loads(subprocess.check_output([sys.executable, "-c", code, str(ROOT)], text=True, cwd=ROOT))
+    state_file = ROOT / ".tools/install-state.json"
+    state = json.loads(state_file.read_text(encoding="utf-8")) if state_file.is_file() else {}
+
+    def local_ports(urls):
+        ports = set()
+        for value in urls:
+            url = urlsplit(value.strip())
+            if url.scheme in {"http", "https"} and url.hostname in {"localhost", "127.0.0.1", "::1"}:
+                ports.add(url.port or (443 if url.scheme == "https" else 80))
+        return ports
+
+    def choose(name, candidates, default):
+        explicit = state.get(name.lower()) or values.get(name.upper())
+        if explicit:
+            return int(explicit)
+        if len(candidates) > 1:
+            raise ValueError(f"Conflicting {name} settings. Set FRONTEND_PORT/BACKEND_PORT in root .env.")
+        return next(iter(candidates), default)
+
+    frontend = choose("FRONTEND_PORT", local_ports(values.get("CORS_ORIGINS", "").split(",")), 3060)
+    backend = choose(
+        "BACKEND_PORT",
+        local_ports([values.get("BACKEND_URL", "") or values.get("NEXT_PUBLIC_API_URL", "")]),
+        8060,
+    )
+    if frontend == backend or not all(1 <= port <= 65535 for port in (frontend, backend)):
+        raise ValueError("Recovered ports are invalid; configure root .env explicitly")
+    return frontend, backend
+
+
+def write_missing_root_env(frontend, backend):
+    path = ROOT / ".env"
+    if path.exists():
+        return
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
+        stream.write(f"FRONTEND_PORT={frontend}\nBACKEND_PORT={backend}\n")
+    print(
+        f"Created missing root .env: frontend {frontend}, backend {backend}. Backend secrets unchanged.",
+        flush=True,
+    )
+
+
 def apply_source(source, backup, protected):
     files = [path for path in source.rglob("*") if path.is_file()]
     manifest = ROOT / ".tools/source-manifest.json"
@@ -295,6 +360,7 @@ def main():
             raise ValueError("Configured database is missing; refusing to create an empty replacement")
         if ROOT.is_relative_to(data_dir):
             raise ValueError("DATA_DIR must not contain the installation root (backup would recurse)")
+        frontend, backend = recover_ports()
         with tempfile.TemporaryDirectory(prefix="1devteams-update-") as temp:
             print("Downloading latest 1devTeams source (main)...", flush=True)
             source = download_source(Path(temp))
@@ -307,11 +373,12 @@ def main():
             )
             installer = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(installer)
-            installer.preflight_ports(ROOT, 3060, 8060)
+            installer.preflight_ports(ROOT, frontend, backend)
             backup = ROOT / "backups" / ("update-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ"))
             print(f"Saving recovery backup: {backup}", flush=True)
             backup_data(backup, databases, data_dir)
             apply_source(source, backup, [*databases, data_dir])
+            write_missing_root_env(frontend, backend)
         env = os.environ.copy()
         env["PATH"] = str(ROOT / ".tools/uv") + os.pathsep + env.get("PATH", "")
         uv = shutil.which("uv", path=env["PATH"])

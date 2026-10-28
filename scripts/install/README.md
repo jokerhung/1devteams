@@ -47,9 +47,13 @@ File source đã được updater quản lý mà không còn trong bản sau s�
 file riêng không nằm trong danh sách quản lý được giữ lại. Lượt cập nhật đầu
 từ bản cũ chưa có danh sách này chỉ thay/thêm source, giữ file cũ không xác định.
 
-Thiếu `.tools/runtime.json` hoặc frontend build không chặn cập nhật: bộ cài
-build lại và tạo runtime config mới. Nếu thiếu venv hoặc cấu hình `.env`,
-bootstrap báo file thiếu và cách chạy bộ cài bên dưới.
+Thiếu `.tools/runtime.json`, frontend build hoặc `.env` ở gốc không chặn cập nhật.
+Bộ cài build lại và tạo runtime config mới. Nếu thiếu `.env` gốc, phục hồi cổng
+từ `.tools/install-state.json`, biến port hiện có, CORS localhost và BACKEND_URL
+trong cấu hình frontend; khi không có thông tin, dùng mặc định 3060/8060.
+Nếu các URL localhost gợi ý nhiều cổng khác nhau, yêu cầu cấu hình cổng rõ ràng.
+Chỉ tạo file gốc còn thiếu, không ghi đè file đã có hay sinh lại backend secret.
+Nếu thiếu venv hoặc `backend/.env`, bootstrap báo file thiếu và cách sửa bên dưới.
 Thư mục không liên quan cũng không bị ghi đè. Nếu cài lỗi, source được giữ
 lại để tiếp tục cài; thư mục tải tạm được dọn sau khi tải/giải nén.
 

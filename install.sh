@@ -15,7 +15,7 @@ esac
 install_target="${ONEDEVTEAMS_INSTALL_DIR:-$HOME/1devTeams}"
 [[ "$install_target" == /* ]] || { printf '%s\n' 'ONEDEVTEAMS_INSTALL_DIR must be an absolute path.' >&2; exit 1; }
 if [[ -e "$install_target" || -L "$install_target" ]]; then
-  for required in scripts/install/run.py scripts/install/install.py .env backend/.env; do
+  for required in scripts/install/run.py scripts/install/install.py backend/.env; do
     if [[ ! -f "$install_target/$required" ]]; then
       printf '%s\n' "Existing directory is not a complete installation: $install_target (missing $required). Nothing was overwritten." "Run bash scripts/install/$installer there to finish installing, or set ONEDEVTEAMS_INSTALL_DIR to a new directory." >&2
       exit 1
@@ -27,12 +27,13 @@ if [[ -e "$install_target" || -L "$install_target" ]]; then
   cd -- "$install_target"
   exec "$python" - "$install_target/scripts/install/run.py" <<'STARTUP_HELPER'
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
 launcher = Path(sys.argv[1]).resolve().with_name('update.py')
 sys.argv = [str(launcher)]
-helper_url = 'https://raw.githubusercontent.com/jokerhung/1devteams/main/scripts/install/update.py'
+helper_url = f'https://raw.githubusercontent.com/jokerhung/1devteams/main/scripts/install/update.py?t={time.time_ns()}'
 try:
     with urllib.request.urlopen(helper_url, timeout=20) as response:
         source = response.read().decode('utf-8')

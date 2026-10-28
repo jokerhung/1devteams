@@ -60,7 +60,8 @@ def test_shell_extract_does_not_depend_on_repository_name(tmp_path, archive_root
 
 @pytest.mark.parametrize("system", ["Linux", "Darwin"])
 @pytest.mark.parametrize(
-    "state", ["installed", "missing_runtime", "partial", "missing_venv", "startup_failure"]
+    "state",
+    ["installed", "missing_runtime", "missing_root_env", "partial", "missing_venv", "startup_failure"],
 )
 def test_shell_rerun_starts_existing_app_without_download(tmp_path, system, state):
     target = tmp_path / "existing installation"
@@ -80,6 +81,8 @@ def test_shell_rerun_starts_existing_app_without_download(tmp_path, system, stat
         if state == "missing_runtime":
             (target / ".tools/runtime.json").unlink()
             (target / ".tools").rmdir()
+        if state == "missing_root_env":
+            (target / ".env").unlink()
         if state != "missing_venv":
             python = target / "backend/.venv/bin/python"
             python.parent.mkdir(parents=True)
@@ -105,7 +108,7 @@ def test_shell_rerun_starts_existing_app_without_download(tmp_path, system, stat
     )
     assert "UNEXPECTED_DOWNLOAD" not in result.stdout
     assert "Downloading" not in result.stdout
-    if state in {"installed", "missing_runtime", "startup_failure"}:
+    if state in {"installed", "missing_runtime", "missing_root_env", "startup_failure"}:
         assert result.returncode == (7 if state == "startup_failure" else 0), result.stderr
         assert "EXISTING_RUNNER_CALLED" in result.stdout
         assert "scripts/install/run.py" in result.stdout

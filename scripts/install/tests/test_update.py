@@ -187,6 +187,7 @@ def test_update_sequence_and_failure_preserves_data(tmp_path, monkeypatch, failu
     monkeypatch.setattr(updater, "ROOT", root)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(updater, "data_paths", lambda: ([db], root / "data"))
+    monkeypatch.setattr(updater, "recover_ports", lambda: (3931, 8931))
     steps = []
 
     def download(path):
@@ -217,6 +218,50 @@ def test_update_sequence_and_failure_preserves_data(tmp_path, monkeypatch, failu
     else:
         updater.main()
     assert db.read_text() == "user data"
+    if failure != "download":
+        assert (root / ".env").read_text() == "FRONTEND_PORT=3931\nBACKEND_PORT=8931\n"
     assert not (root / ".tools/update.lock").exists()
     expected = ["download"] if failure == "download" else ["download", "stop", "backup", "source", "build"]
     assert steps == expected + (["start"] if not failure else [])
+
+
+@pytest.mark.parametrize("source", ["state", "existing_env", "urls", "defaults"])
+def test_recover_missing_root_env_preserves_existing_configuration(tmp_path, monkeypatch, source):
+    monkeypatch.setattr(updater, "ROOT", tmp_path)
+    (tmp_path / "backend").mkdir()
+    (tmp_path / "frontend").mkdir()
+    secrets = "JWT_SECRET=keep-original\nAPP_SECRET_KEY=never-regenerate\n"
+    backend_env = tmp_path / "backend/.env"
+    backend_env.write_text(secrets)
+    expected = (3060, 8060)
+    if source == "state":
+        (tmp_path / ".tools").mkdir()
+        (tmp_path / ".tools/install-state.json").write_text(
+            json.dumps({"frontend_port": 3931, "backend_port": 8931})
+        )
+        expected = (3931, 8931)
+    elif source == "existing_env":
+        # Existing root settings are read by preflight; the repair must leave bytes alone.
+        (tmp_path / ".env").write_text("FRONTEND_PORT=3333\nBACKEND_PORT=8333\nCUSTOM=keep\n")
+    elif source == "urls":
+        backend_env.write_text(secrets + "CORS_ORIGINS=https://teams.example.com,http://localhost:3931\n")
+        (tmp_path / "frontend/.env").write_text("BACKEND_URL=http://127.0.0.1:8931\n")
+        expected = (3931, 8931)
+    before = backend_env.read_bytes()
+    frontend, backend = updater.recover_ports()
+    assert (frontend, backend) == expected
+    updater.write_missing_root_env(frontend, backend)
+    if source == "existing_env":
+        assert (tmp_path / ".env").read_text() == "FRONTEND_PORT=3333\nBACKEND_PORT=8333\nCUSTOM=keep\n"
+    else:
+        assert (tmp_path / ".env").read_text() == f"FRONTEND_PORT={frontend}\nBACKEND_PORT={backend}\n"
+    assert backend_env.read_bytes() == before
+
+
+def test_ambiguous_port_recovery_stops_before_writing(tmp_path, monkeypatch):
+    monkeypatch.setattr(updater, "ROOT", tmp_path)
+    (tmp_path / "backend").mkdir()
+    (tmp_path / "backend/.env").write_text("CORS_ORIGINS=http://localhost:3000,http://localhost:3931\n")
+    with pytest.raises(ValueError, match="Conflicting FRONTEND_PORT"):
+        updater.recover_ports()
+    assert not (tmp_path / ".env").exists()

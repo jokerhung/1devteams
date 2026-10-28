@@ -48,9 +48,11 @@ def test_update_helper_uses_installed_root_and_preserves_old_launcher(tmp_path, 
         exec(compile(startup_code(), "bootstrap-helper", "exec"), {})
     output = capsys.readouterr().out
     assert launcher.read_text() == original
-    assert requests == [
+    assert len(requests) == 1
+    assert requests[0].split("?")[0] == (
         "https://raw.githubusercontent.com/jokerhung/1devteams/main/scripts/install/update.py"
-    ]
+    )
+    assert "?t=" in requests[0]
     if offline:
         assert "OLD_LAUNCHER_FALLBACK" not in output
     else:
