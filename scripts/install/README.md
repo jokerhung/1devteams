@@ -234,6 +234,11 @@ truy cập phù hợp.
 
 ## Chạy lại / xử lý lỗi
 
+- Nếu mạng trả helper cũ qua cache, có thể đặt `ONEDEVTEAMS_UPDATE_REF` bằng
+  SHA commit đã kiểm tra để tải helper từ URL bất biến. Trên Linux/macOS đặt
+  biến ở phía `bash`: `curl -fsSL <bootstrap-url> | ONEDEVTEAMS_UPDATE_REF=<sha> bash`.
+  Biến này chỉ chọn helper; source ứng dụng vẫn cập nhật theo nhánh `main`.
+
 - Nếu thấy `getcwd() failed` / `Current directory does not exist`, shell đang
   đứng trong thư mục đã bị xóa. Chạy `cd "$HOME"` rồi gọi lại bootstrap, hoặc
   `cd "$HOME/1devTeams"` và chạy `bash scripts/install/linux.sh` để tiếp tục

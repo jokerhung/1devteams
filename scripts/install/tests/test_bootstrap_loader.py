@@ -19,7 +19,9 @@ def startup_code():
     return shell_code
 
 
-def test_repair_stop_helper_uses_latest_code_and_installed_root(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("ref", ["main", "be155329d62ef96d8f8ab97a0b9c25e0a0de6116"])
+def test_repair_stop_helper_uses_latest_code_and_installed_root(tmp_path, monkeypatch, capsys, ref):
+    monkeypatch.setenv("ONEDEVTEAMS_UPDATE_REF", ref)
     shell = (ROOT / "install.sh").read_text(encoding="utf-8")
     windows = (ROOT / "install.ps1").read_text(encoding="utf-8")
     code = shell.split("<<'STOP_HELPER'\n", 1)[1].split("\nSTOP_HELPER", 1)[0]
@@ -30,9 +32,16 @@ def test_repair_stop_helper_uses_latest_code_and_installed_root(tmp_path, monkey
         b"def stop_installed():\n    print('STOP', __file__)\n"
         b"if __name__ == '__main__':\n    raise RuntimeError('Unexpected update')\n"
     )
-    monkeypatch.setattr(urllib.request, "urlopen", lambda *args, **kwargs: io.BytesIO(source))
+    requests = []
+
+    def download(url, **kwargs):
+        requests.append(url)
+        return io.BytesIO(source)
+
+    monkeypatch.setattr(urllib.request, "urlopen", download)
     exec(compile(code, "repair-helper", "exec"), {})
     assert "STOP " + str(launcher) in capsys.readouterr().out
+    assert f"/1devteams/{ref}/scripts/install/update.py?" in requests[0]
 
 
 @pytest.mark.parametrize("offline", [False, True])
