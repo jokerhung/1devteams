@@ -21,3 +21,7 @@ spike_logs/
 .dev-logs/
 backend/data/
 backups/
+.tools/
+/workspaces/
+frontend/.next-build/
+frontend/.next-dev-*/

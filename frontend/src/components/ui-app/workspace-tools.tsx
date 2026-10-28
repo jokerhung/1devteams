@@ -76,7 +76,7 @@ export function WorkspaceToolsArea({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (tools.terminalOpen && projectId) setCreatedProject(projectId);
   }, [tools.terminalOpen, projectId]);
-  const showTools = tools.terminalOpen || tools.filesOpen;
+  const showTools = tools.terminalOpen;
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-stone-300/80 bg-white shadow-sm">
       {showTools && (
@@ -84,7 +84,7 @@ export function WorkspaceToolsArea({ children }: { children: ReactNode }) {
           <label htmlFor="tools-project">Workspace</label>
           <select
             id="tools-project"
-            aria-label="Project cho terminal và file"
+            aria-label="Project cho terminal"
             className="inp !w-auto max-w-full text-xs"
             value={projectId}
             disabled={!!routeProject}
@@ -111,7 +111,7 @@ export function WorkspaceToolsArea({ children }: { children: ReactNode }) {
           ) : (
             !projectId && (
               <span className="text-stone-500">
-                Chọn project để mở terminal hoặc xem file.
+                Chọn project để mở terminal.
               </span>
             )
           )}
@@ -126,14 +126,18 @@ export function WorkspaceToolsArea({ children }: { children: ReactNode }) {
         >
           {children}
         </TerminalDock>
-        {tools.filesOpen && projectId && (
+        {tools.filesOpen && (
           <WorkspaceFiles
-            key={projectId}
-            projectId={projectId}
+            key={routeProject || "allowed-roots"}
+            projectId={routeProject}
             onClose={tools.toggleFiles}
           />
         )}
-        <AgentChat open={tools.chatOpen} onClose={tools.toggleChat} />
+        <AgentChat
+          open={tools.chatOpen}
+          onClose={tools.toggleChat}
+          contextProjectId={routeProject}
+        />
       </div>
     </div>
   );

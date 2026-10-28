@@ -39,7 +39,7 @@ export function alertNewNotification(value: unknown) {
     data: { url },
   };
   try {
-    const notification = new Notification(`1Teams · ${notice.title}`, options);
+    const notification = new Notification(`1devTeams · ${notice.title}`, options);
     notification.onclick = () => {
       window.focus();
       notification.close();
@@ -52,7 +52,7 @@ export function alertNewNotification(value: unknown) {
         .register("/notification-worker.js")
         .then(() => navigator.serviceWorker.ready)
         .then((registration) =>
-          registration.showNotification(`1Teams · ${notice.title}`, options),
+          registration.showNotification(`1devTeams · ${notice.title}`, options),
         )
         .catch(() => {
           /* The in-app toast remains available. */

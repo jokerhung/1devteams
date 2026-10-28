@@ -102,7 +102,7 @@ test("new user events show both alerts once even with multiple realtime subscrib
   );
   expect(native).toHaveBeenCalledTimes(1);
   expect(native).toHaveBeenCalledWith(
-    "1Teams · Cần xác nhận",
+    "1devTeams · Cần xác nhận",
     expect.objectContaining({
       body: "Tester đã hoàn tất",
       data: { url: "/projects/p1/workflows/w1/tickets/t1?focus=gate" },

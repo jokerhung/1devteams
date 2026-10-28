@@ -1,86 +1,256 @@
-# aiTeams
+# 1devTeams — Đội ngũ AI cho quy trình phát triển phần mềm
 
-Phase 1 ACP/API bridge: [implementation, usage and verification status](docs/specs/PHASE_1_IMPLEMENTATION_NOTES.md).
-Phase 2 Database & REST API: [cấu hình đăng nhập, migration và API](docs/specs/PHASE_2_IMPLEMENTATION_NOTES.md).
-Phase 3 Workflow Engine: [runner, checkpoint, gates, Git release và realtime](docs/specs/PHASE_3_IMPLEMENTATION_NOTES.md).
-Phase 4 Frontend Shell & Management: [giao diện, đăng nhập, quản lý và kiểm thử](docs/specs/PHASE_4_IMPLEMENTATION_NOTES.md).
-Phase 5 Workflow Builder: [wizard, canvas, pipeline và kiểm thử](docs/specs/PHASE_5_IMPLEMENTATION_NOTES.md).
-Phase 6 Ticket Chat Runtime: [chat, log, attachments, gates và kiểm thử](docs/specs/PHASE_6_IMPLEMENTATION_NOTES.md).
-Phase 7 Terminal & Hardening: [PTY, fallback, audit, backup, cài đặt và kiểm thử](docs/specs/PHASE_7_IMPLEMENTATION_NOTES.md).
+Quản lý AI agents, tổ chức teams và điều phối công việc từ yêu cầu đến kiểm thử,
+phê duyệt và Git release trên một giao diện web. Chat trực tiếp với agent hoặc
+làm việc theo ticket, theo dõi tool, diff, log và terminal ngay trong workspace.
 
-Monorepo FastAPI + Next.js 15, ACP/API bridge, database/REST API, workflow engine
-và giao diện quản lý, Workflow Builder, Ticket Chat Runtime. Native ACP còn bị khóa bởi policy gate
-cho đến khi công cụ của adapter được cách ly và kiểm chứng; xem ghi chú Phase 3.
+**FastAPI · Next.js · LangGraph · Claude Code · Codex · ACP/API**
 
-## Cài đặt (PowerShell)
+## ⚡ Bắt đầu nhanh
 
-Yêu cầu Python 3.11+ (đã kiểm tra với 3.12), uv, Node.js 22+ và npm.
+### 1. Cài bằng một lệnh
+
+Không cần clone repository, giải nén source hoặc cài sẵn Python/Node.js/Git.
+Bootstrap tải source và gọi bộ cài tương ứng với hệ điều hành.
+
+Windows — PowerShell:
 
 ```powershell
-npm ci
-uv sync --project backend --python 3.12
-npm --prefix frontend ci
-Copy-Item .env.example .env
-Copy-Item backend/.env.example backend/.env
-Copy-Item frontend/.env.example frontend/.env
+irm https://raw.githubusercontent.com/jokerhung/aiTeams/main/install.ps1 | iex
 ```
 
-Đặt `JWT_SECRET` riêng trong `backend/.env` (bắt buộc; không commit). Các cấu hình còn lại
-có mặc định trong file mẫu. `ALLOWED_WORKSPACE_ROOTS` phân cách bằng `;`,
-`CORS_ORIGINS` phân cách bằng `,`. Next proxy gọi backend qua `BACKEND_URL`
-(fallback `NEXT_PUBLIC_API_URL`); browser dùng `/api/backend` cùng origin.
+Linux / macOS — Terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jokerhung/aiTeams/main/install.sh | bash
+```
+
+> Các URL chỉ dùng được sau khi toàn bộ bộ cài được push lên nhánh `main` của
+> repository công khai. Đọc script trước khi thực thi. Linux cần `curl`, `tar`,
+> `bash` và quyền `sudo`; Windows/macOS có thể yêu cầu xác nhận cài công cụ hệ thống.
+
+Thư mục mặc định: `%LOCALAPPDATA%\1devTeams` trên Windows, `$HOME/1devTeams`
+trên Linux/macOS. Có thể chọn đường dẫn tuyệt đối khác bằng biến
+`ONEDEVTEAMS_INSTALL_DIR`. Bootstrap không ghi đè thư mục đã tồn tại.
+
+Bộ cài chuẩn bị dependency, build frontend, sinh secret/mật khẩu ngẫu nhiên,
+migrate database và tạo sẵn:
+
+| Thành phần | Dữ liệu ban đầu |
+| --- | --- |
+| Owner | `owner@example.com`, mật khẩu ngẫu nhiên trong `backend/.env` |
+| 9 agents | `@ba`, `@developer`, `@tester`, `@devops`, `@leader`, `@planner`, `@designer`, `@workflow`, `@security` |
+| 3 teams | Core Bugfix Squad, Feature Delivery Squad, Security Review Squad |
+| 4 templates | Blank, Fix Bug, Add Feature, Fix Bug + Security Review |
+
+### 2. Khởi chạy ứng dụng
+
+Windows:
+
+```powershell
+cd "$env:LOCALAPPDATA\1devTeams"
+.\backend\.venv\Scripts\python.exe scripts/install/run.py
+```
+
+Linux/macOS:
+
+```bash
+cd "$HOME/1devTeams"
+./backend/.venv/bin/python scripts/install/run.py
+```
+
+Nếu chọn thư mục riêng, `cd` tới thư mục đó. Mở **http://localhost:3060** và đăng
+nhập bằng `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` trong `backend/.env`.
+Không chia sẻ file này. Ctrl+C dừng cả hai dịch vụ; `--check` kiểm tra khởi động
+rồi dừng, `--no-open` không tự mở browser.
+
+### 3. Kết nối AI và tạo project
+
+1. Vào **Settings → Adapters → Login** để đăng nhập Claude/Codex.
+2. Chỉ với workspace tin cậy, bật `TRUSTED_NATIVE_ACP=true` trong `backend/.env`
+   rồi khởi động lại để cho phép native agents chạy. Mặc định quyền này bị tắt.
+3. Chọn thư mục được phép truy cập trong **Settings → Workspaces**, tạo project,
+   chọn team/template và bắt đầu ticket; hoặc chat trực tiếp với từng agent.
+
+Bộ cài không cung cấp tài khoản hay gói dịch vụ AI. Xem
+[hướng dẫn cài đặt](scripts/install/README.md) để đổi email Owner, cổng, workspace,
+cấu hình LAN, cài từ source hoặc chạy lại an toàn.
+
+## 📱 Nền tảng hỗ trợ
+
+| Nền tảng | Máy chạy dịch vụ | Cách truy cập |
+| --- | --- | --- |
+| Windows 10/11 | Bộ cài PowerShell 5.1+ | Trình duyệt web |
+| Linux | Bộ cài Ubuntu 22.04/24.04, Debian 12/13; x64/ARM64 | Trình duyệt web |
+| macOS | Bộ cài Intel/Apple Silicon; cần phiên bản tương thích Playwright | Trình duyệt web |
+| Máy tính khác trong mạng | Không cần cài backend tại máy khách | URL máy chủ, với mạng/CORS được cấu hình |
+| iOS / Android | Không có bộ cài host hoặc ứng dụng native trong repo | Truy cập web; trải nghiệm di động chưa được xác minh đầy đủ |
+
+Hiện phân phối bằng source và script; chưa có gói desktop EXE/DMG/AppImage.
+Đã kiểm tra cú pháp script, bootstrap Windows bằng tải giả lập và khởi tạo dữ liệu
+trên SQLite tạm. Chưa xác minh cài end-to-end trên máy sạch cho từng OS, đặc biệt
+Linux/macOS; không xem bảng trên là chứng nhận tương thích mọi cấu hình.
+
+## ✨ 8 tính năng nổi bật
+
+1. **Agents & Teams:** cấu hình vai trò, prompt, runtime, model và quyền; tổ chức
+   agent thành đội phục vụ từng quy trình.
+2. **Chat trực tiếp với agent:** không bắt buộc tạo ticket; chọn project hoặc
+   để trống, tự lấy project theo trang đang mở khi phù hợp.
+3. **Workflow trực quan:** dựng luồng bằng canvas, dùng template, kiểm tra tính
+   hợp lệ và quản lý phiên bản trước khi chạy.
+4. **Ticket theo quy trình:** chuyển việc giữa BA, Developer, Tester và DevOps;
+   hỗ trợ hỏi lại người dùng và bước phê duyệt trước Git release.
+5. **Theo dõi lượt chạy:** hiển thị trạng thái đang làm việc, các action gần nhất
+   và chi tiết tool, diff, log, terminal để kiểm tra kết quả thực tế.
+6. **Workspace và ảnh đính kèm:** duyệt file trong thư mục được phép, xem ảnh
+   phóng to trong popup và tải ảnh từ cuộc trò chuyện.
+7. **Terminal thời gian thực:** WebSocket hai chiều, gom output theo frame,
+   WebGL với fallback và lấy bù output khi kết nối lại.
+8. **Browser Worker & thông báo:** agent có quyền browser có thể thao tác qua
+   Playwright; thông báo trong ứng dụng, toast và browser notification khi
+   trình duyệt hỗ trợ và người dùng đã cấp quyền.
+
+## 🛡️ Kiến trúc và bảo mật
+
+Ứng dụng tự host trên máy của bạn. Trình duyệt truy cập Next.js; backend FastAPI
+quản lý dữ liệu, workflow, kết nối AI và các công cụ trên máy chủ.
+
+```mermaid
+flowchart LR
+    Browser[Trình duyệt] --> Web[Next.js: UI và API proxy]
+    Web --> API[FastAPI: xác thực và phân quyền]
+    Web <-->|WebSocket terminal| API
+    API --> DB[(Database và checkpoint)]
+    API --> Engine[LangGraph: workflow và human gates]
+    Engine --> AI[Claude / Codex qua ACP hoặc API]
+    API --> Tools[Workspace / PTY / Browser Worker]
+```
+
+- **Tài khoản và quyền:** xác thực JWT, cookie HttpOnly phía web và phân quyền
+  theo tài khoản/project. Terminal kiểm tra Origin và quyền ghi project.
+- **Secret:** mật khẩu được hash; credential AI lưu mã hóa bằng Fernet với
+  `APP_SECRET_KEY`. Bộ cài sinh khóa riêng, không dùng secret mặc định chung.
+- **Workspace:** cấu hình các thư mục ứng dụng được phép truy cập bằng
+  `ALLOWED_WORKSPACE_ROOTS` hoặc Settings. Đây không phải sandbox cho mọi công
+  cụ mà native agent có thể gọi.
+- **Quyền nguy hiểm là opt-in:** `TRUSTED_NATIVE_ACP` và `ENABLE_REMOTE_TERMINAL`
+  mặc định tắt. Khi bật, native tools/terminal có quyền của OS user chạy dịch vụ;
+  permission profile trong UI không thay thế cách ly hệ điều hành.
+- **Kiểm soát của con người:** các template có bước Git release yêu cầu xác nhận
+  trước khi phát hành. Theo dõi log/diff và kiểm tra thay đổi trước khi duyệt.
+
+Không có cơ chế pairing, tunnel mã hóa đầu-cuối hay remote desktop WebRTC trong
+triển khai này. Nội dung gửi cho nhà cung cấp AI vẫn rời máy chủ theo cấu hình
+provider. Không đưa secret, file `.env` hoặc log chứa credential lên issue công khai.
+
+## 📂 Cấu trúc monorepo
+
+```text
+backend/
+  app/                 FastAPI, ACP/API, workflow engine và services
+  alembic/             Database migrations
+  scripts/             Công cụ kiểm tra ACP
+  tests/               Kiểm thử backend
+frontend/
+  src/                 Next.js UI, workflow canvas, chat và terminal
+  tests/               Kiểm thử frontend
+scripts/
+  install/             Bộ cài 3 OS, seed dữ liệu, launcher và kiểm thử
+  dev.ps1              Launcher phát triển trên Windows
+docs/
+  specs/               Thiết kế, ghi chú triển khai và kết quả kiểm chứng
+install.ps1            Bootstrap một lệnh cho Windows
+install.sh             Bootstrap một lệnh cho Linux/macOS
+```
+
+Backend dùng Python, FastAPI, SQLAlchemy/Alembic và LangGraph; frontend dùng
+Next.js 15, React 19, TypeScript, React Flow và xterm.js. Chromium/Playwright
+phục vụ Browser Worker. ACP adapters được pin tại `package-lock.json` gốc.
+
+## 🌐 Self-hosting
+
+### Cấu hình và dữ liệu
+
+| Vị trí | Vai trò |
+| --- | --- |
+| `.env` | `FRONTEND_PORT=3060`, `BACKEND_PORT=8060` |
+| `backend/.env` | Secret, Owner bootstrap, database, workspace, CORS và quyền native/terminal |
+| `frontend/.env` | `BACKEND_URL`, `NEXT_PUBLIC_API_URL` |
+| `backend/data/` | Database SQLite và checkpoint mặc định của bộ cài, dữ liệu ứng dụng |
+| `.tools/` | Runtime/dependency cục bộ và thông tin khởi chạy |
+| `.dev-logs/` | Log launcher; không commit |
+
+`ALLOWED_WORKSPACE_ROOTS` phân cách bằng `;`, `CORS_ORIGINS` bằng `,`.
+Backend hỗ trợ cấu hình database khác; bộ cài mới mặc định dùng SQLite.
+Sao lưu database, dữ liệu và `.env` trước khi nâng cấp; mất `APP_SECRET_KEY`
+có thể khiến credential đã mã hóa không đọc được.
+
+### Truy cập từ LAN hoặc domain
+
+Launcher production mở frontend trên `0.0.0.0`, backend trên `127.0.0.1`.
+Browser gọi `/api/backend` cùng origin; Next.js proxy tới `BACKEND_URL`.
+
+1. Cấu hình firewall/mạng chỉ cho những máy được phép truy cập.
+2. Thêm origin frontend thực tế vào `CORS_ORIGINS`; tùy chọn `-PublicUrl` /
+   `--public-url` hỗ trợ việc này khi tạo cấu hình lần đầu.
+3. Với truy cập từ xa, đặt HTTPS/reverse proxy phía trước web và cho phép
+   WebSocket Upgrade tại `/ws/terminal/{project_id}`.
+
+Không tự tạo DNS, TLS, tunnel hoặc mở firewall. Launcher chưa đăng ký Windows
+Service/systemd/launchd; việc chạy nền và tự khởi động cần được cấu hình riêng.
+
+### Terminal và reconnect
+
+Client dùng `session_id` và `after_seq` để lấy bù output còn trong bộ đệm khi
+mất kết nối. Backend giữ tối đa 262144 ký tự và 4096 chunk; nếu lịch sử cần lấy
+đã hết hạn, client reset và phát lại phần còn giữ. WebGL tự chuyển về renderer
+mặc định nếu không khả dụng.
+
+**PTY vẫn nằm trong tiến trình backend:** shell có thể tồn tại qua mất kết nối
+web đến thời hạn idle, nhưng restart backend sẽ kết thúc shell. Chưa có PTY
+daemon độc lập giữ shell qua restart.
+
+### Chạy lại bộ cài
+
+Dừng ứng dụng rồi chạy script OS trong `scripts/install/` từ source đã có.
+Cấu hình cũ và dữ liệu mẫu đã chỉnh được giữ lại; bộ cài không reset Owner.
+Khi đổi cổng, cập nhật `.env`, URL frontend và CORS, rồi build lại để rewrite
+WebSocket dùng đúng backend. Xem [hướng dẫn chi tiết](scripts/install/README.md).
+
+## ✍️ Phân phối và ký phát hành
+
+- Bootstrap hiện tải source nhánh `main` từ `jokerhung/aiTeams`; chưa pin theo
+  release tag hoặc commit bất biến.
+- Chưa có binary desktop hoặc quy trình ký Authenticode/notarization trong
+  bộ cài này. Không coi script là một bản phát hành đã được ký.
+- Node tải cục bộ được đối chiếu SHA-256 với manifest của Node.js; kiểm tra này
+  không thay thế xác minh nguồn script/source của 1devTeams.
+- Chỉ chạy mã từ nguồn đã kiểm tra. Môi trường cần kiểm soát phiên bản chặt
+  nên dùng checkout commit đã review và chạy bộ cài từ source đó.
+
+## 🧪 Phát triển, kiểm thử và tài liệu
+
+### Chạy môi trường phát triển
+
+Sau khi đã cài dependency và cấu hình, tại thư mục gốc trên Windows:
 
 ```powershell
 .\scripts\dev.ps1
-# Install/sync backend virtual environment and frontend dependencies, then start:
+# Đồng bộ dependency trước khi chạy:
 .\scripts\dev.ps1 -Setup
-# Hoặc: npm run dev
-# Kiểm tra startup rồi tự dừng cả hai dịch vụ:
+# Kiểm tra startup rồi tự dừng:
 .\scripts\dev.ps1 -SmokeTest
 ```
 
-`scripts/dev.ps1` runs the backend with `backend/.venv/Scripts/python.exe` directly;
-manual virtual environment activation is not required. Logs are written to `.dev-logs/`.
-Press Ctrl+C to stop both services. `-SmokeTest` checks both URLs and then stops them.
+Launcher dùng Python trong `backend/.venv`, không cần activate thủ công.
+Không dùng Uvicorn `--reload` trên Windows để giữ event loop phù hợp subprocess ACP.
+Health tại `http://localhost:8060/api/health`, Swagger tại `http://localhost:8060/docs`.
+Health xác nhận binary adapter tồn tại, không chứng minh login/inference thành công.
+Adapter resolver ưu tiên `node_modules/.bin`, sau đó PATH; có thể override bằng
+`CLAUDE_ACP_BIN` / `CODEX_ACP_BIN`.
 
-Đổi cổng trong `.env` tại thư mục gốc repo rồi chạy lại script:
-
-```dotenv
-FRONTEND_PORT=3060
-BACKEND_PORT=8060
-```
-
-Script tự đặt `NEXT_PUBLIC_API_URL` theo cổng backend và thêm địa chỉ frontend vào CORS.
-Biến môi trường của tiến trình được ưu tiên hơn `.env`. Backend vẫn dùng virtual environment.
-
-- Frontend: http://localhost:3060 — đăng nhập bằng tài khoản owner trong `backend/.env`, quản lý Agents & Teams, Projects và Thông báo.
-- Backend: http://localhost:8060/api/health — `{"status":"ok","acp":{"claude":true,"codex":true}}`.
-- Swagger: http://localhost:8060/docs.
-
-Script dừng cả process tree khi Ctrl+C hoặc khi một dịch vụ thoát. Không dùng Uvicorn
-`--reload` trên Windows để giữ ProactorEventLoop cho subprocess ACP.
-Adapter được cài **trong repo** ở `node_modules/.bin`; resolver ưu tiên bản được pin này,
-sau đó tìm trên PATH. Có thể override `CLAUDE_ACP_BIN` / `CODEX_ACP_BIN` bằng đường dẫn tuyệt đối.
-Health chỉ xác nhận binary tồn tại, không xác nhận login hoặc inference hoạt động.
-
-## Remote terminal
-
-Terminal dùng WebSocket hai chiều tại `/ws/terminal/{project_id}` qua rewrite của Next.js
-tới `BACKEND_URL` (hoặc `NEXT_PUBLIC_API_URL`). Reverse proxy phía trước web cần cho phép
-WebSocket Upgrade. Trình duyệt dùng cookie HttpOnly; Origin phải nằm trong `CORS_ORIGINS`
-và người dùng cần quyền ghi project. Quyền được kiểm tra lại tối đa mỗi 15 giây.
-
-Output lớn được gom theo frame, phản hồi nhỏ được ghi ngay khi hàng đợi rảnh. WebGL tự
-chuyển về renderer mặc định nếu không khả dụng hoặc mất context. Khi tự kết nối lại,
-client gửi `session_id` và `after_seq` để lấy bù output. Backend giữ tối đa 262144 ký tự
-và 4096 chunk; nếu phần còn thiếu đã bị loại khỏi bộ đệm, terminal được reset và phát
-lại phần lịch sử còn giữ. Phản hồi giao thức sinh từ lịch sử không gửi ngược vào shell.
-
-PTY hiện vẫn thuộc tiến trình backend: mất kết nối web giữ shell đến thời hạn idle,
-nhưng restart backend sẽ kết thúc shell. Chỉ cần tách PTY daemon khi có yêu cầu giữ
-shell qua restart; daemon chưa thuộc thay đổi này.
-
-## Kiểm tra
+### Kiểm tra tự động
 
 ```powershell
 cd backend
@@ -97,33 +267,42 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-## Spike ACP thật
-
-Chạy `claude auth status` và `codex login status` để tự kiểm tra đăng nhập.
-Không đưa API key hay output chứa credential vào issue/log công khai.
+Kiểm tra bộ cài từ thư mục gốc (Windows; Unix dùng `backend/.venv/bin/python`):
 
 ```powershell
-cd backend
+.\backend\.venv\Scripts\python.exe -m pytest scripts/install/tests -q
+.\backend\.venv\Scripts\python.exe -m ruff check --config backend/pyproject.toml scripts/install
+```
+
+### Kiểm chứng ACP thật
+
+Kiểm tra login bằng `claude auth status` / `codex login status` với CLI đã cài.
+Từ `backend/`, chạy harness trong workspace tạm, không phải repo đang phát triển:
+
+```powershell
 uv run python scripts/acp_spike.py --runtime claude
 uv run python scripts/acp_spike.py --runtime codex --mode read-only
 ```
 
-Harness tạo workspace nhỏ trong thư mục Temp của Windows, độc lập với repo; giữ lại để
-kiểm tra kết quả. Permission `allow_once` chỉ dùng cho spike trong workspace dùng một lần.
-Harness không phải sandbox bảo mật cho agent hoặc lệnh terminal tùy ý.
+Log `.ndjson`, `.client.ndjson`, `.stderr.log`, `.summary.json` được lưu trong
+`backend/spike_logs/` (gitignored). Harness không phải sandbox; cần xem các
+`checks`/`passed` và phạm vi chế độ chạy trước khi kết luận. Khử thông tin nhạy
+cảm và kiểm tra thủ công trước khi chia sẻ log. Xem [ACP spike notes](docs/specs/ACP_SPIKE_NOTES.md).
 
-Mỗi lượt lưu stdout nguyên dòng (`.ndjson`), các message client gửi (`.client.ndjson`),
-stderr (`.stderr.log`) và kết quả từng bước (`.summary.json`) ở `backend/spike_logs/`
-(gitignored). `--timeout`, `--cancel-after`, `--mode`, `--model`, `--binary` cho phép tái lập kiểm tra.
-Summary có `checks` và `passed`; full spike chỉ trả exit code 0 khi chọn model, kết thúc prompt,
-nội dung hello.txt, marker vai trò BA và hủy lượt pending đều được xác minh. Các chế độ
-`--skip-cancel`/`--cancel-only` chỉ xác minh phần tương ứng, không chứng minh full spike.
-Claude dùng `session/set_config_option`; Codex dùng `session/set_model` theo kết quả thật.
-`--isolate-settings` chỉ loại trừ settings cá nhân trong session Claude đang thử.
+### Tài liệu triển khai
 
-```powershell
-uv run python scripts/sanitize_spike.py spike_logs/<stem>.ndjson tests/fixtures/acp/claude.ndjson
-```
+- [Cài đặt, tùy chọn và khắc phục lỗi](scripts/install/README.md)
+- [Browser Worker](docs/BROWSER_WORKER.md)
+- [Phase 1 — ACP/API bridge](docs/specs/PHASE_1_IMPLEMENTATION_NOTES.md)
+- [Phase 2 — Database & REST API](docs/specs/PHASE_2_IMPLEMENTATION_NOTES.md)
+- [Phase 3 — Workflow engine](docs/specs/PHASE_3_IMPLEMENTATION_NOTES.md)
+- [Phase 4 — Frontend & management](docs/specs/PHASE_4_IMPLEMENTATION_NOTES.md)
+- [Phase 5 — Workflow builder](docs/specs/PHASE_5_IMPLEMENTATION_NOTES.md)
+- [Phase 6 — Ticket chat runtime](docs/specs/PHASE_6_IMPLEMENTATION_NOTES.md)
+- [Phase 7 — Terminal & hardening](docs/specs/PHASE_7_IMPLEMENTATION_NOTES.md)
 
-Đọc và kiểm tra log đã khử thông tin trước khi commit. Xem kết quả, khác biệt giao thức và
-các phần chưa xác minh tại [ACP_SPIKE_NOTES](docs/specs/ACP_SPIKE_NOTES.md).
+## 📄 Giấy phép
+
+Repository hiện chưa có file `LICENSE`. Maintainer cần xác định và bổ sung
+giấy phép phân phối của 1devTeams; không suy ra giấy phép từ các dự án tham khảo.
+Dependency bên thứ ba có giấy phép riêng.

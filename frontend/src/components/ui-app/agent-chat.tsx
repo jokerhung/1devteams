@@ -42,9 +42,11 @@ type ChatEvent =
 export function AgentChat({
   open,
   onClose,
+  contextProjectId,
 }: {
   open: boolean;
   onClose: () => void;
+  contextProjectId?: string;
 }) {
   const agents = useQuery({
     queryKey: keys.agents,
@@ -76,6 +78,15 @@ export function AgentChat({
   const [error, setError] = useState("");
   const abort = useRef<AbortController | null>(null);
   const end = useRef<HTMLDivElement>(null);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    const opening = open && !wasOpen.current;
+    wasOpen.current = open;
+    if (opening && !busy) {
+      setProjectId(contextProjectId || "");
+      setError("");
+    }
+  }, [open, contextProjectId, busy]);
   useEffect(() => () => abort.current?.abort(), []);
   useEffect(() => {
     if (open) end.current?.scrollIntoView({ block: "nearest" });

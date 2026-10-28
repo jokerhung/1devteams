@@ -300,7 +300,7 @@ export function Sidebar() {
           >
             <Link
               href="/"
-              aria-label="1Teams · Trang chủ"
+              aria-label="1devTeams · Trang chủ"
               onClick={() => setMobile(false)}
               className="flex min-w-0 items-center gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-stone-400"
             >

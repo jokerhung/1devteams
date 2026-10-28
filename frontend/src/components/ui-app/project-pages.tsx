@@ -410,7 +410,7 @@ export function ProjectSettings({ pid }: { pid: string }) {
       <div className="mt-12 max-w-xl rounded-xl border border-red-200 p-4">
         <h2 className="text-sm font-semibold">Xoá project</h2>
         <p className="my-2 text-xs text-stone-500">
-          Xoá dữ liệu project, workflow và ticket trong 1Teams.
+          Xoá dữ liệu project, workflow và ticket trong 1devTeams.
         </p>
         <button
           className="btn btn-light text-red-700"
@@ -430,7 +430,7 @@ export function ProjectSettings({ pid }: { pid: string }) {
             router.replace("/projects");
           }}
         >
-          Dữ liệu project trong 1Teams sẽ bị xoá vĩnh viễn.
+          Dữ liệu project trong 1devTeams sẽ bị xoá vĩnh viễn.
         </ConfirmDialog>
       )}
     </>

@@ -81,6 +81,67 @@ async def browse_workspace(request: Request, user: CurrentUser, path: str = "") 
         fail(403, "Không đọc được thư mục", "directory_unreadable")
 
 
+def allowed_file_root(request: Request, root: str) -> str:
+    folder = Path(root)
+    if not folder.is_absolute():
+        fail(403, "Thư mục không được phép", "invalid_workspace")
+    folder = folder.resolve()
+    if folder not in request.app.state.settings.workspace_roots:
+        fail(403, "Thư mục không được phép", "invalid_workspace")
+    return str(folder)
+
+
+@router.get("/workspace-files")
+async def allowed_workspace_files(
+    request: Request,
+    user: CurrentUser,
+    root: str = Query(default="", max_length=4000),
+    path: str = Query(default="", max_length=2000),
+) -> dict:
+    from app.services.workspace_files import list_workspace_files
+
+    def listing() -> dict:
+        roots = request.app.state.settings.workspace_roots
+        if not root:
+            if path:
+                fail(403, "Chọn thư mục được phép trước", "invalid_workspace")
+            return {
+                "path": "",
+                "entries": [
+                    {"name": str(folder), "path": str(folder), "kind": "directory"}
+                    for folder in roots
+                    if folder.is_dir()
+                ],
+                "truncated": False,
+            }
+        return list_workspace_files(allowed_file_root(request, root), roots, path)
+
+    try:
+        return await asyncio.to_thread(listing)
+    except (OSError, ValueError):
+        fail(400, "Không đọc được thư mục", "directory_unreadable")
+
+
+@router.get("/workspace-file")
+async def allowed_workspace_file(
+    request: Request,
+    user: CurrentUser,
+    root: str = Query(min_length=1, max_length=4000),
+    path: str = Query(min_length=1, max_length=2000),
+) -> dict:
+    from app.services.workspace_files import read_workspace_file
+
+    def read() -> dict:
+        return read_workspace_file(
+            allowed_file_root(request, root), request.app.state.settings.workspace_roots, path
+        )
+
+    try:
+        return await asyncio.to_thread(read)
+    except (OSError, ValueError):
+        fail(400, "Không đọc được file", "file_unreadable")
+
+
 @router.get("/recent", response_model=list[ProjectOut])
 async def recent_projects(
     db: DB, user: CurrentUser, limit: int = Query(default=5, ge=1, le=100), pin: UUID | None = None

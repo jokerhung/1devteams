@@ -33,7 +33,7 @@ export function WorkspaceFiles({
   projectId,
   onClose,
 }: {
-  projectId: string;
+  projectId?: string;
   onClose: () => void;
 }) {
   const [width, setWidth] = useState(280);
@@ -64,24 +64,29 @@ export function WorkspaceFiles({
     setResizing(false);
   };
   const [directory, setDirectory] = useState("");
+  const [root, setRoot] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [preview, setPreview] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const isMarkdown = /\.(md|markdown)$/i.test(selected || "");
   const listing = useQuery({
-    queryKey: ["workspace-files", projectId, directory],
+    queryKey: ["workspace-files", projectId, root, directory],
     queryFn: ({ signal }) =>
       apiFetch<Listing>(
-        `/projects/${projectId}/files?path=${encodeURIComponent(directory)}`,
+        projectId
+          ? `/projects/${projectId}/files?path=${encodeURIComponent(directory)}`
+          : `/projects/workspace-files?root=${encodeURIComponent(root)}&path=${encodeURIComponent(directory)}`,
         { signal },
       ),
     retry: false,
   });
   const file = useQuery({
-    queryKey: ["workspace-file", projectId, selected],
+    queryKey: ["workspace-file", projectId, root, selected],
     queryFn: ({ signal }) =>
       apiFetch<TextFile>(
-        `/projects/${projectId}/file?path=${encodeURIComponent(selected!)}`,
+        projectId
+          ? `/projects/${projectId}/file?path=${encodeURIComponent(selected!)}`
+          : `/projects/workspace-file?root=${encodeURIComponent(root)}&path=${encodeURIComponent(selected!)}`,
         { signal },
       ),
     enabled: selected !== null,
@@ -249,22 +254,38 @@ export function WorkspaceFiles({
           type="button"
           className="btn btn-light shrink-0"
           aria-label="Lên thư mục cha"
-          disabled={!directory}
-          onClick={() =>
-            setDirectory(directory.split("/").slice(0, -1).join("/"))
-          }
+          disabled={!directory && !root}
+          onClick={() => {
+            if (directory)
+              setDirectory(directory.split("/").slice(0, -1).join("/"));
+            else {
+              setRoot("");
+              setSelected(null);
+            }
+          }}
         >
           <ArrowUp size={14} aria-hidden="true" />
         </button>
         <button
           type="button"
           className="shrink-0 text-sky-700"
-          onClick={() => setDirectory("")}
+          onClick={() => {
+            setDirectory("");
+            if (!projectId) {
+              setRoot("");
+              setSelected(null);
+            }
+          }}
         >
-          Workspace
+          {projectId ? "Workspace" : "Thư mục cho phép"}
         </button>
-        <span className="truncate text-stone-500" title={directory}>
-          / {directory}
+        <span
+          className="truncate text-stone-500"
+          title={root ? `${root}/${directory}` : directory}
+        >
+          {root
+            ? `${root}${directory ? ` / ${directory}` : ""}`
+            : `/ ${directory}`}
         </span>
       </nav>
       <div className="h-[35%] min-h-20 shrink-0 overflow-auto overscroll-contain border-b border-stone-200 p-1">
@@ -281,7 +302,11 @@ export function WorkspaceFiles({
         {!listing.isPending &&
           !listing.error &&
           !listing.data?.entries.length && (
-            <p className="p-2 text-xs text-stone-500">Thư mục trống</p>
+            <p className="p-2 text-xs text-stone-500">
+              {!projectId && !root
+                ? "Không có thư mục được phép truy cập."
+                : "Thư mục trống"}
+            </p>
           )}
         {listing.data?.entries.map((entry) => (
           <button
@@ -293,8 +318,13 @@ export function WorkspaceFiles({
               entry.kind === "file" ? selected === entry.path : undefined
             }
             onClick={() => {
-              if (entry.kind === "directory") setDirectory(entry.path);
-              else {
+              if (entry.kind === "directory") {
+                if (!projectId && !root) {
+                  setRoot(entry.path);
+                  setDirectory("");
+                  setSelected(null);
+                } else setDirectory(entry.path);
+              } else {
                 setSelected(entry.path);
                 setPreview(false);
               }
