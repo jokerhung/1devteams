@@ -16,13 +16,13 @@ Bootstrap tải source và gọi bộ cài tương ứng với hệ điều hàn
 Windows — PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/jokerhung/aiTeams/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/jokerhung/1devteams/main/install.ps1 | iex
 ```
 
 Linux / macOS — Terminal:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jokerhung/aiTeams/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jokerhung/1devteams/main/install.sh | bash
 ```
 
 > Các URL chỉ dùng được sau khi toàn bộ bộ cài được push lên nhánh `main` của
@@ -220,7 +220,7 @@ WebSocket dùng đúng backend. Xem [hướng dẫn chi tiết](scripts/install/
 
 ## ✍️ Phân phối và ký phát hành
 
-- Bootstrap hiện tải source nhánh `main` từ `jokerhung/aiTeams`; chưa pin theo
+- Bootstrap hiện tải source nhánh `main` từ `jokerhung/1devteams`; chưa pin theo
   release tag hoặc commit bất biến.
 - Chưa có binary desktop hoặc quy trình ký Authenticode/notarization trong
   bộ cài này. Không coi script là một bản phát hành đã được ký.

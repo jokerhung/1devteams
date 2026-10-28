@@ -10,13 +10,13 @@ quyền cài các gói hệ điều hành. Đọc script từ URL trước khi c
 Windows (mở PowerShell):
 
 ```powershell
-irm https://raw.githubusercontent.com/jokerhung/aiTeams/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/jokerhung/1devteams/main/install.ps1 | iex
 ```
 
 Linux hoặc macOS (mở terminal):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jokerhung/aiTeams/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jokerhung/1devteams/main/install.sh | bash
 ```
 
 Windows mặc định cài vào `%LOCALAPPDATA%\1devTeams`; Linux/macOS vào
@@ -25,7 +25,7 @@ tuyệt đối) để chọn thư mục khác. Bootstrap từ chối thư mục 
 không ghi đè source/config/dữ liệu; nếu cài lỗi, source được giữ lại để chạy
 lại bộ cài bên dưới. Thư mục tải tạm được dọn sau khi tải/giải nén.
 
-URL dùng nhánh `main` của `jokerhung/aiTeams`: cần **push toàn bộ bộ cài lên
+URL dùng nhánh `main` của `jokerhung/1devteams`: cần **push toàn bộ bộ cài lên
 GitHub và repository phải truy cập công khai** trước khi phân phối lệnh này.
 Không có credential GitHub trong script. Máy Linux tối giản cần có `curl`,
 `tar`, `bash` và `sudo`; ví dụ cài curl nếu thiếu: `sudo apt-get update &&

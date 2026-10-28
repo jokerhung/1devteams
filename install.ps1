@@ -1,4 +1,4 @@
-# One-line entrypoint: irm https://raw.githubusercontent.com/jokerhung/aiTeams/main/install.ps1 | iex
+# One-line entrypoint: irm https://raw.githubusercontent.com/jokerhung/1devteams/main/install.ps1 | iex
 # The scoped block also works through Invoke-Expression, where PSScriptRoot is unavailable.
 & {
     $ErrorActionPreference = 'Stop'
@@ -15,11 +15,14 @@
     New-Item -ItemType Directory -Path $downloadRoot | Out-Null
     try {
         $archive = Join-Path $downloadRoot 'source.zip'
-        Write-Host 'Downloading 1devTeams source from github.com/jokerhung/aiTeams (main)...'
-        Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/jokerhung/aiTeams/archive/refs/heads/main.zip' -OutFile $archive
+        Write-Host 'Downloading 1devTeams source from github.com/jokerhung/1devteams (main)...'
+        Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/jokerhung/1devteams/archive/refs/heads/main.zip' -OutFile $archive
         $extracted = Join-Path $downloadRoot 'source'
         Expand-Archive -LiteralPath $archive -DestinationPath $extracted
-        $source = Join-Path $extracted 'aiTeams-main'
+        # Discover the archive root instead of depending on the repository name.
+        $sourceDirectories = @(Get-ChildItem -LiteralPath $extracted -Directory)
+        if ($sourceDirectories.Count -ne 1) { throw 'Expected exactly one source directory in the downloaded archive.' }
+        $source = $sourceDirectories[0].FullName
         foreach ($required in @('scripts/install/windows.ps1', 'backend/uv.lock', 'frontend/package-lock.json')) {
             if (-not (Test-Path -LiteralPath (Join-Path $source $required) -PathType Leaf)) {
                 throw "Downloaded archive is missing $required. Publish the complete installer to main first."

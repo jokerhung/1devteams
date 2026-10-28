@@ -23,11 +23,13 @@ cleanup() {
   esac
 }
 trap cleanup EXIT
-printf '%s\n' 'Downloading 1devTeams source from github.com/jokerhung/aiTeams (main)...'
+printf '%s\n' 'Downloading 1devTeams source from github.com/jokerhung/1devteams (main)...'
 curl --proto '=https' --tlsv1.2 -fLsS --retry 3 \
-  https://github.com/jokerhung/aiTeams/archive/refs/heads/main.tar.gz -o "$download_root/source.tar.gz"
-tar -xzf "$download_root/source.tar.gz" -C "$download_root"
-source_root="$download_root/aiTeams-main"
+  https://github.com/jokerhung/1devteams/archive/refs/heads/main.tar.gz -o "$download_root/source.tar.gz"
+# GitHub changes the archive's top-level directory when the repository is renamed.
+source_root="$download_root/source"
+mkdir -- "$source_root"
+tar -xzf "$download_root/source.tar.gz" --strip-components=1 -C "$source_root"
 for required in "scripts/install/$installer" backend/uv.lock frontend/package-lock.json; do
   [[ -f "$source_root/$required" ]] || { printf '%s\n' "Downloaded archive is missing $required. Publish the complete installer to main first." >&2; exit 1; }
 done

@@ -11,11 +11,11 @@ ROOT = Path(__file__).resolve().parents[3]
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="PowerShell bootstrap requires Windows")
 
 
-def run_bootstrap(tmp_path, target):
+def run_bootstrap(tmp_path, target, archive_root="1devteams-main"):
     archive = tmp_path / "fixture.zip"
     with zipfile.ZipFile(archive, "w") as bundle:
         for name in ("scripts/install/windows.ps1", "backend/uv.lock", "frontend/package-lock.json"):
-            bundle.writestr(f"aiTeams-main/{name}", "fixture")
+            bundle.writestr(f"{archive_root}/{name}", "fixture")
     env = {
         **os.environ,
         "ONEDEVTEAMS_INSTALL_DIR": str(target),
@@ -47,9 +47,10 @@ def run_bootstrap(tmp_path, target):
     )
 
 
-def test_windows_piped_bootstrap_download_extract_and_dispatch(tmp_path):
+@pytest.mark.parametrize("archive_root", ["aiTeams-main", "1devteams-main", "renamed-repository-main"])
+def test_windows_piped_bootstrap_download_extract_and_dispatch(tmp_path, archive_root):
     target = tmp_path / "new installation with spaces"
-    result = run_bootstrap(tmp_path, target)
+    result = run_bootstrap(tmp_path, target, archive_root)
     assert result.returncode == 0, result.stderr
     assert (target / "backend/uv.lock").read_text() == "fixture"
     assert "INSTALLER_CALLED" in result.stdout
