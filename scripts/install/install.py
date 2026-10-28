@@ -125,6 +125,7 @@ def preflight_ports(root, frontend, backend):
                 probe.bind(("127.0.0.1", port))
             except OSError as error:
                 raise ValueError(f"Port {port} is in use. Stop the application before installing.") from error
+    return ports
 
 
 def main():
@@ -141,6 +142,9 @@ def main():
     parser.add_argument("--skip-providers", action="store_true")
     parser.add_argument("--skip-browser", action="store_true")
     parser.add_argument("--no-start", action="store_true", help="Install without starting the web app")
+    parser.add_argument(
+        "--update", action="store_true", help="Preserve existing configuration and skip starter data"
+    )
     args = parser.parse_args()
     if (
         not all(1 <= p <= 65535 for p in [args.frontend_port, args.backend_port])
@@ -150,7 +154,7 @@ def main():
     uv, git = shutil.which("uv"), shutil.which("git")
     if not uv or not git:
         parser.error("Run the OS-specific installer first to install Git and uv")
-    preflight_ports(ROOT, args.frontend_port, args.backend_port)
+    configured_ports = preflight_ports(ROOT, args.frontend_port, args.backend_port)
     node = ensure_node()
     npm = npm_command(node)
     env = os.environ.copy()
@@ -163,9 +167,13 @@ def main():
     )
     run([uv, "sync", "--project", ROOT / "backend", "--python", "3.12", "--frozen"], env=env)
     python = ROOT / "backend/.venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    init_args = [arg for arg in sys.argv[1:] if arg != "--no-start"]
-    run([python, ROOT / "scripts/install/initialize.py", *init_args], env=env)
-    state = json.loads((ROOT / ".tools/install-state.json").read_text())
+    if args.update:
+        # Existing ports are validated above; do not regenerate config or reseed edited agents/teams.
+        state = {"backend_port": configured_ports["BACKEND_PORT"]}
+    else:
+        init_args = [arg for arg in sys.argv[1:] if arg != "--no-start"]
+        run([python, ROOT / "scripts/install/initialize.py", *init_args], env=env)
+        state = json.loads((ROOT / ".tools/install-state.json").read_text())
     env["BACKEND_URL"] = f"http://127.0.0.1:{state['backend_port']}"
     env["NEXT_PUBLIC_API_URL"] = env["BACKEND_URL"]
     env["NEXT_DIST_DIR"] = ".next-build"
@@ -194,7 +202,11 @@ def main():
     (ROOT / ".tools/runtime.json").write_text(
         json.dumps({"node": str(node), "git": git}, indent=2), encoding="utf-8"
     )
-    print("\nInstallation complete. Agents, teams and templates are ready.")
+    print(
+        "\nUpdate build complete. Existing configuration and starter data were preserved."
+        if args.update
+        else "\nInstallation complete. Agents, teams and templates are ready."
+    )
     print(f'Restart later: "{python}" "{ROOT / "scripts/install/run.py"}"')
     print("Open Settings > Adapters to log in to Claude/Codex. No provider credentials were created.")
     if not args.trust_native_agents:

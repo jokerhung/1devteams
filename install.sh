@@ -15,7 +15,7 @@ esac
 install_target="${ONEDEVTEAMS_INSTALL_DIR:-$HOME/1devTeams}"
 [[ "$install_target" == /* ]] || { printf '%s\n' 'ONEDEVTEAMS_INSTALL_DIR must be an absolute path.' >&2; exit 1; }
 if [[ -e "$install_target" || -L "$install_target" ]]; then
-  for required in scripts/install/run.py .tools/runtime.json frontend/.next-build/BUILD_ID .env backend/.env; do
+  for required in scripts/install/run.py scripts/install/install.py .tools/runtime.json .env backend/.env; do
     if [[ ! -f "$install_target/$required" ]]; then
       printf '%s\n' "Existing directory is not a complete installation: $install_target (missing $required). Nothing was overwritten." "Run bash scripts/install/$installer there to finish installing, or set ONEDEVTEAMS_INSTALL_DIR to a new directory." >&2
       exit 1
@@ -23,23 +23,21 @@ if [[ -e "$install_target" || -L "$install_target" ]]; then
   done
   python="$install_target/backend/.venv/bin/python"
   [[ -x "$python" ]] || { printf '%s\n' "Backend venv is missing or not executable. Run bash scripts/install/$installer in $install_target to repair it." >&2; exit 1; }
-  printf '%s\n' "Starting the installed version at: $install_target" 'App source and dependencies stay unchanged. Loading the latest startup helper in memory.'
+  printf '%s\n' "Updating the installed version at: $install_target" 'Configuration and user data will be preserved; a recovery backup is created before updating.'
   cd -- "$install_target"
   exec "$python" - "$install_target/scripts/install/run.py" <<'STARTUP_HELPER'
-import runpy
 import sys
 import urllib.request
 from pathlib import Path
 
-launcher = Path(sys.argv[1]).resolve()
+launcher = Path(sys.argv[1]).resolve().with_name('update.py')
 sys.argv = [str(launcher)]
-helper_url = 'https://raw.githubusercontent.com/jokerhung/1devteams/main/scripts/install/run.py'
+helper_url = 'https://raw.githubusercontent.com/jokerhung/1devteams/main/scripts/install/update.py'
 try:
     with urllib.request.urlopen(helper_url, timeout=20) as response:
         source = response.read().decode('utf-8')
 except (OSError, UnicodeError) as error:
-    print(f'Could not load the latest startup helper ({error}). Using the installed launcher; older versions may not print LAN URLs.', flush=True)
-    runpy.run_path(str(launcher), run_name='__main__')
+    sys.exit(f'Could not load the updater ({error}). No files were changed; the running server was left alone.')
 else:
     # Preserve the installed project root without writing over its launcher.
     exec(compile(source, helper_url, 'exec'), {'__name__': '__main__', '__file__': str(launcher)})

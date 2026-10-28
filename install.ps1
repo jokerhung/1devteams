@@ -9,34 +9,32 @@
         Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) '1devTeams'
     }
     if (Test-Path -LiteralPath $installTarget) {
-        foreach ($required in @('scripts/install/run.py', '.tools/runtime.json', 'frontend/.next-build/BUILD_ID', '.env', 'backend/.env', 'backend/.venv/Scripts/python.exe')) {
+        foreach ($required in @('scripts/install/run.py', 'scripts/install/install.py', '.tools/runtime.json', '.env', 'backend/.env', 'backend/.venv/Scripts/python.exe')) {
             if (-not (Test-Path -LiteralPath (Join-Path $installTarget $required) -PathType Leaf)) {
                 throw "Existing directory is not a complete installation: $installTarget (missing $required). Nothing was overwritten. Run scripts/install/windows.ps1 there to finish installing, or set ONEDEVTEAMS_INSTALL_DIR to a new directory."
             }
         }
-        Write-Host "Starting the installed version at: $installTarget"
-        Write-Host 'App source and dependencies stay unchanged. Loading the latest startup helper in memory.'
+        Write-Host "Updating the installed version at: $installTarget"
+        Write-Host 'Configuration and user data will be preserved; a recovery backup is created before updating.'
         $startupHelper = @'
-import runpy
 import sys
 import urllib.request
 from pathlib import Path
 
-launcher = Path(sys.argv[1]).resolve()
+launcher = Path(sys.argv[1]).resolve().with_name('update.py')
 sys.argv = [str(launcher)]
-helper_url = 'https://raw.githubusercontent.com/jokerhung/1devteams/main/scripts/install/run.py'
+helper_url = 'https://raw.githubusercontent.com/jokerhung/1devteams/main/scripts/install/update.py'
 try:
     with urllib.request.urlopen(helper_url, timeout=20) as response:
         source = response.read().decode('utf-8')
 except (OSError, UnicodeError) as error:
-    print(f'Could not load the latest startup helper ({error}). Using the installed launcher; older versions may not print LAN URLs.', flush=True)
-    runpy.run_path(str(launcher), run_name='__main__')
+    sys.exit(f'Could not load the updater ({error}). No files were changed; the running server was left alone.')
 else:
     # Preserve the installed project root without writing over its launcher.
     exec(compile(source, helper_url, 'exec'), {'__name__': '__main__', '__file__': str(launcher)})
 '@
         & (Join-Path $installTarget 'backend/.venv/Scripts/python.exe') -c $startupHelper (Join-Path $installTarget 'scripts/install/run.py')
-        if ($LASTEXITCODE -ne 0) { throw 'Could not start the installed app. Check the error above; no files were changed.' }
+        if ($LASTEXITCODE -ne 0) { throw 'Update/start failed. Check the error and recovery backup path above.' }
         return
     }
     $downloadRoot = Join-Path ([IO.Path]::GetTempPath()) ('1devteams-install-' + [Guid]::NewGuid().ToString('N'))

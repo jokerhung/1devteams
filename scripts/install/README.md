@@ -22,16 +22,32 @@ curl -fsSL https://raw.githubusercontent.com/jokerhung/1devteams/main/install.sh
 Windows mặc định cài vào `%LOCALAPPDATA%\1devTeams`; Linux/macOS vào
 `$HOME/1devTeams`. Dùng biến môi trường `ONEDEVTEAMS_INSTALL_DIR` (đường dẫn
 tuyệt đối) để chọn thư mục khác. Nếu thư mục chứa bản đã cài hoàn chỉnh,
-chạy lại cùng lệnh sẽ **chạy ngay bản đang có** bằng Python trong
-`backend/.venv`; không cập nhật source ứng dụng hay cài dependency lại.
-Bootstrap tải riêng nội dung launcher mới nhất từ
-`scripts/install/run.py` trên GitHub vào bộ nhớ, chạy với thư mục gốc của bản
-đã cài để in URL localhost/IP và cấu hình CORS cho IP mạng. Không ghi đè file
-launcher trên máy. Link chỉ được in sau khi web sẵn sàng.
-Source/config/dữ liệu không bị ghi đè; database vẫn được ứng dụng sử dụng
-bình thường khi khởi động. Đây không phải lệnh nâng cấp lên bản mới.
+chạy lại cùng lệnh sẽ **cập nhật source từ `main`, đồng bộ dependency, build
+frontend và khởi động lại server**. Bootstrap tải updater mới nhất vào bộ nhớ,
+nên bản cài cũ cũng dùng được luồng này. Link localhost/IP chỉ in khi web sẵn sàng.
 
-Nếu thư mục chưa cài xong (thiếu venv, runtime config, frontend build hoặc
+Updater tải và kiểm tra archive trước khi dừng ứng dụng. Chỉ tiến trình nhận diện
+được bằng đường dẫn của đúng bản cài và các tiến trình con được dừng; ứng dụng
+khác chiếm cổng sẽ khiến cập nhật dừng với thông báo lỗi.
+Giữ nguyên `.env`/`.env.*`, `backend/config`, workspace, database, attachments,
+venv và thư mục công cụ. Dependency trong venv/node_modules được đồng bộ theo
+lockfile mới; không cài lại provider CLI/browser trong lượt cập nhật.
+Không chạy bước khởi tạo agents/teams/template hay reset Owner; migration và
+seed tương thích của ứng dụng vẫn chạy khi khởi động.
+
+Trước khi thay source, tạo bản phục hồi `backups/update-<UTC>/`: SQLite backup
+API lưu cả dữ liệu đã commit trong WAL, sao chép DATA_DIR và cấu hình, lưu source
+bị thay thế. `restore-paths.json` ghi đường dẫn database/DATA_DIR gốc, kể cả nằm
+ngoài thư mục cài. Bảo vệ bản sao lưu như dữ liệu gốc vì có chứa secret.
+Luồng tự động hỗ trợ SQLite; với PostgreSQL, script dừng trước khi thay đổi và
+yêu cầu sao lưu/nâng cấp thủ công.
+
+Source cục bộ trùng file của bản phát hành được thay thế và có bản sao lưu.
+File source đã được updater quản lý mà không còn trong bản sau sẽ bị xóa;
+file riêng không nằm trong danh sách quản lý được giữ lại. Lượt cập nhật đầu
+từ bản cũ chưa có danh sách này chỉ thay/thêm source, giữ file cũ không xác định.
+
+Nếu thư mục chưa cài xong (thiếu venv, runtime config hoặc
 cấu hình `.env`), bootstrap báo file thiếu và cách chạy bộ cài bên dưới.
 Thư mục không liên quan cũng không bị ghi đè. Nếu cài lỗi, source được giữ
 lại để tiếp tục cài; thư mục tải tạm được dọn sau khi tải/giải nén.
@@ -205,13 +221,20 @@ truy cập phù hợp.
   đứng trong thư mục đã bị xóa. Chạy `cd "$HOME"` rồi gọi lại bootstrap, hoặc
   `cd "$HOME/1devTeams"` và chạy `bash scripts/install/linux.sh` để tiếp tục
   cài dở trên Linux. Bộ cài mới tự chuyển vào thư mục hợp lệ trước khi gọi uv.
-- Chạy lại lệnh bootstrap một dòng trên bản đã cài sẽ chỉ khởi động bản đó.
-  Nếu ứng dụng đang chạy trong terminal khác, dùng URL tại đó; launcher không
-  kill tiến trình hoặc tạo bản thứ hai trên cổng đang bận. Nếu không tải được
-  startup helper, có cảnh báo trước khi dùng launcher trên máy; launcher cũ
-  có thể chỉ in localhost. Khi đó kiểm tra mạng rồi chạy lại bootstrap.
-- Dừng ứng dụng trước khi cài lại. Bộ cài từ chối nếu cổng web/backend đang
-  được sử dụng; nó không tự kill tiến trình đang chạy.
+- Chạy lại bootstrap sẽ cập nhật và khởi động lại bản đã cài. Lỗi tải updater
+  hoặc archive không làm dừng server đang chạy. Lỗi backup/dependency/build
+  sau khi dừng khiến server giữ trạng thái dừng; sửa lỗi rồi gọi lại cùng lệnh,
+  kể cả khi build trước bị thiếu. Script in đường dẫn bản sao lưu để phục hồi.
+- Bộ cài OS chạy trực tiếp vẫn yêu cầu dừng ứng dụng trước; bootstrap tự dừng
+  đúng tiến trình của bản cài. Tiến trình chạy thủ công không nhận diện được
+  cần được dừng thủ công; script không kill ứng dụng khác theo cổng.
+- Nếu updater bị ngắt cưỡng bức, kiểm tra không còn lượt cập nhật đang chạy
+  trước khi xóa thư mục khóa `.tools/update.lock` rồi thử lại.
+- Không tự rollback khi thất bại. Để phục hồi, dừng server, dùng source trong
+  bản sao lưu và bản phát hành cũ, đồng bộ/build lại. Nếu migration đã chạy,
+  phục hồi SQLite từ `database-*.db` đến đường dẫn trong `restore-paths.json`
+  (xử lý WAL/SHM cũ khi server đã dừng), DATA_DIR và cấu hình từ bản sao lưu.
+  Không khởi động code cũ trên database đã migration mà chưa kiểm tra tương thích.
 - File `.env` đã tồn tại được giữ nguyên, kể cả khi truyền tùy chọn khác.
   Muốn đổi email/cổng/quyền/workspace trên cài đặt cũ, sửa cấu hình tương ứng;
   các tùy chọn không reset mật khẩu của Owner đã có.

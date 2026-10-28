@@ -31,13 +31,16 @@ curl -fsSL https://raw.githubusercontent.com/jokerhung/1devteams/main/install.sh
 
 Thư mục mặc định: `%LOCALAPPDATA%\1devTeams` trên Windows, `$HOME/1devTeams`
 trên Linux/macOS. Có thể chọn đường dẫn tuyệt đối khác bằng biến
-`ONEDEVTEAMS_INSTALL_DIR`. Chạy lại cùng lệnh trên máy đã cài sẽ **khởi động
-ngay phiên bản hiện có**, rồi launcher in URL localhost/IP khi web sẵn sàng;
-không cập nhật source ứng dụng, cài lại dependency hay ghi đè cấu hình. Bootstrap
-nạp riêng launcher mới nhất từ GitHub vào bộ nhớ để bản cũ cũng có phần in
-IP LAN và cấu hình Origin; không ghi đè `scripts/install/run.py` đã cài. Nếu
-không tải được helper, script cảnh báo rồi dùng launcher cũ. Nếu thư mục cài
-dở, bootstrap báo cách tiếp tục cài thay vì chạy hoặc ghi đè thư mục đó.
+`ONEDEVTEAMS_INSTALL_DIR`. Chạy lại cùng lệnh trên máy đã cài sẽ **cập nhật
+source mới nhất từ nhánh `main`, đồng bộ dependency, build và khởi động lại server**,
+rồi in URL localhost/IP khi web sẵn sàng. Các file `.env`, cấu hình trong
+`backend/config`, workspace và dữ liệu được giữ nguyên. Trước khi cập nhật,
+script dừng tiến trình của đúng bản cài và sao lưu SQLite, dữ liệu, cấu hình cùng
+source bị thay thế vào `backups/update-…`. Migration cần thiết vẫn chạy khi
+ứng dụng khởi động, không reset tài khoản hay dữ liệu người dùng.
+Nếu tải source thất bại, server đang chạy không bị dừng. Cài dở thiếu venv hoặc
+cấu hình sẽ có hướng dẫn sửa. Luồng tự cập nhật hiện hỗ trợ SQLite;
+PostgreSQL cần sao lưu và nâng cấp thủ công.
 
 Bộ cài tạo virtual environment riêng tại `backend/.venv` bằng uv, cài dependency
 backend vào venv (không cài Python package toàn hệ thống), build frontend,
@@ -244,10 +247,11 @@ daemon độc lập giữ shell qua restart.
 
 ### Chạy lại bộ cài
 
-Chạy lại lệnh một dòng `curl … | bash` / `irm … | iex` chỉ khởi động bản đã
-cài, **không nâng cấp**. Giữ terminal mở; Ctrl+C để dừng. Nếu app đã chạy trong
-terminal khác, tiếp tục dùng URL ở đó; launcher không tự dừng hoặc thay thế
-tiến trình đang chiếm cổng.
+Chạy lại lệnh một dòng `curl … | bash` / `irm … | iex` để cập nhật và khởi động
+lại bản đã cài. Giữ terminal mở; Ctrl+C để dừng. Script chỉ dừng tiến trình
+nhận diện được của bản cài đó, không kill ứng dụng khác chỉ vì chiếm cùng cổng.
+Nếu cài dependency/build lỗi, server được giữ ở trạng thái dừng; sửa lỗi rồi
+chạy lại lệnh. Đường dẫn bản sao lưu phục hồi được in ra màn hình.
 
 Muốn cài lại dependency/build hoặc hoàn tất lần cài dở: dừng ứng dụng rồi
 chạy script OS trong `scripts/install/` từ source đã có.

@@ -77,6 +77,7 @@ def test_windows_bootstrap_starts_installed_version_without_download(tmp_path):
     target = tmp_path / "existing installation"
     files = [
         "scripts/install/run.py",
+        "scripts/install/install.py",
         ".tools/runtime.json",
         "frontend/.next-build/BUILD_ID",
         ".env",

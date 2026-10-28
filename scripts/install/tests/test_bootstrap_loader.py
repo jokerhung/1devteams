@@ -1,4 +1,4 @@
-"""Old installations get current URL reporting without replacing installed files."""
+"""Old installations load the current updater without modifying files before download."""
 
 import io
 import sys
@@ -20,9 +20,7 @@ def startup_code():
 
 
 @pytest.mark.parametrize("offline", [False, True])
-def test_startup_helper_uses_installed_root_and_preserves_old_launcher(
-    tmp_path, monkeypatch, capsys, offline
-):
+def test_update_helper_uses_installed_root_and_preserves_old_launcher(tmp_path, monkeypatch, capsys, offline):
     launcher = tmp_path / "scripts/install/run.py"
     launcher.parent.mkdir(parents=True)
     original = "print('OLD_LAUNCHER_FALLBACK')\n"
@@ -43,13 +41,18 @@ def test_startup_helper_uses_installed_root_and_preserves_old_launcher(
         )
 
     monkeypatch.setattr(urllib.request, "urlopen", download)
-    exec(compile(startup_code(), "bootstrap-helper", "exec"), {})
+    if offline:
+        with pytest.raises(SystemExit, match="No files were changed"):
+            exec(compile(startup_code(), "bootstrap-helper", "exec"), {})
+    else:
+        exec(compile(startup_code(), "bootstrap-helper", "exec"), {})
     output = capsys.readouterr().out
     assert launcher.read_text() == original
-    assert requests == ["https://raw.githubusercontent.com/jokerhung/1devteams/main/scripts/install/run.py"]
+    assert requests == [
+        "https://raw.githubusercontent.com/jokerhung/1devteams/main/scripts/install/update.py"
+    ]
     if offline:
-        assert "older versions may not print LAN URLs" in output
-        assert "OLD_LAUNCHER_FALLBACK" in output
+        assert "OLD_LAUNCHER_FALLBACK" not in output
     else:
         assert str(tmp_path) in output
         assert "Localhost: http://localhost:3060; Network: http://192.168.1.20:3060" in output

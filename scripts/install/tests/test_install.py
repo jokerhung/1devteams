@@ -227,3 +227,33 @@ def test_empty_bootstrap_password_rejected(tmp_path):
     )
     with pytest.raises(ValueError, match="BOOTSTRAP_ADMIN_PASSWORD"):
         asyncio.run(initializer.initialize(tmp_path / ".env"))
+
+
+def test_update_build_uses_existing_port_without_initializing_or_seeding(tmp_path, monkeypatch):
+    (tmp_path / ".tools").mkdir()
+    config = tmp_path / ".env"
+    config.write_text("BACKEND_PORT=8931\nFRONTEND_PORT=3931\nCUSTOM=retained\n")
+    monkeypatch.setattr(installer, "ROOT", tmp_path)
+    monkeypatch.setattr(installer, "preflight_ports", lambda *args: {"BACKEND_PORT": 8931})
+    monkeypatch.setattr(installer, "ensure_node", lambda: tmp_path / "node")
+    monkeypatch.setattr(installer, "npm_command", lambda node: [node, "npm-cli.js"])
+    monkeypatch.setattr(installer.shutil, "which", lambda name: str(tmp_path / name))
+    monkeypatch.setattr(
+        installer.sys,
+        "argv",
+        [
+            "install.py",
+            "--update",
+            "--no-start",
+            "--skip-providers",
+            "--skip-browser",
+        ],
+    )
+    calls = []
+    monkeypatch.setattr(installer, "run", lambda args, **kwargs: calls.append((args, kwargs)))
+    installer.main()
+    assert not any("initialize.py" in str(arg) for args, _ in calls for arg in args)
+    assert not any("run.py" in str(arg) for args, _ in calls for arg in args)
+    build = next(kwargs for args, kwargs in calls if "build" in args)
+    assert build["env"]["BACKEND_URL"] == "http://127.0.0.1:8931"
+    assert config.read_text() == "BACKEND_PORT=8931\nFRONTEND_PORT=3931\nCUSTOM=retained\n"

@@ -66,6 +66,7 @@ def test_shell_rerun_starts_existing_app_without_download(tmp_path, system, stat
     if state != "partial":
         for name in (
             "scripts/install/run.py",
+            "scripts/install/install.py",
             ".tools/runtime.json",
             "frontend/.next-build/BUILD_ID",
             ".env",
