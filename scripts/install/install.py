@@ -153,6 +153,9 @@ def main():
     node = ensure_node()
     npm = npm_command(node)
     env = os.environ.copy()
+    # Always isolate backend dependencies here, even when the invoking shell
+    # has UV_PROJECT_ENVIRONMENT pointing at another project or a system prefix.
+    env["UV_PROJECT_ENVIRONMENT"] = str(ROOT / "backend/.venv")
     provider_bin = ROOT / ".tools/providers/node_modules/.bin"
     env["PATH"] = os.pathsep.join(
         [str(node.parent), str(provider_bin), str(Path(git).parent), env.get("PATH", "")]

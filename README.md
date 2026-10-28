@@ -33,12 +33,13 @@ Thư mục mặc định: `%LOCALAPPDATA%\1devTeams` trên Windows, `$HOME/1devT
 trên Linux/macOS. Có thể chọn đường dẫn tuyệt đối khác bằng biến
 `ONEDEVTEAMS_INSTALL_DIR`. Bootstrap không ghi đè thư mục đã tồn tại.
 
-Bộ cài chuẩn bị dependency, build frontend, sinh secret/mật khẩu ngẫu nhiên,
-migrate database và tạo sẵn:
+Bộ cài tạo virtual environment riêng tại `backend/.venv` bằng uv, cài dependency
+backend vào venv (không cài Python package toàn hệ thống), build frontend,
+sinh secret ngẫu nhiên, migrate database và tạo sẵn:
 
 | Thành phần | Dữ liệu ban đầu |
 | --- | --- |
-| Owner | `owner@example.com`, mật khẩu ngẫu nhiên trong `backend/.env` |
+| Owner | Email `owner@example.com`, mật khẩu mặc định `123456` |
 | 9 agents | `@ba`, `@developer`, `@tester`, `@devops`, `@leader`, `@planner`, `@designer`, `@workflow`, `@security` |
 | 3 teams | Core Bugfix Squad, Feature Delivery Squad, Security Review Squad |
 | 4 templates | Blank, Fix Bug, Add Feature, Fix Bug + Security Review |
@@ -63,6 +64,10 @@ Nếu chọn thư mục riêng, `cd` tới thư mục đó. Mở **http://localh
 nhập bằng `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` trong `backend/.env`.
 Không chia sẻ file này. Ctrl+C dừng cả hai dịch vụ; `--check` kiểm tra khởi động
 rồi dừng, `--no-open` không tự mở browser.
+
+**Đổi mật khẩu `123456` ngay sau đăng nhập và trước khi mở truy cập qua mạng.**
+Đây là mật khẩu khởi tạo công khai, chỉ áp dụng khi cài mới; chạy lại bộ cài
+không đổi mật khẩu của tài khoản đã tồn tại. Mật khẩu mới phải có ít nhất 8 ký tự.
 
 ### 3. Kết nối AI và tạo project
 

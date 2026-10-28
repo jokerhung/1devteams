@@ -95,7 +95,7 @@ def configure(root, args):
             "JWT_SECRET": secrets.token_urlsafe(48),
             "APP_SECRET_KEY": Fernet.generate_key().decode(),
             "BOOTSTRAP_ADMIN_EMAIL": args.admin_email,
-            "BOOTSTRAP_ADMIN_PASSWORD": secrets.token_urlsafe(24),
+            "BOOTSTRAP_ADMIN_PASSWORD": "123456",
             "DATABASE_URL": "sqlite+aiosqlite:///" + (data / "aiteams.db").as_posix(),
             "CHECKPOINT_DB": str(data / "checkpoints.db"),
             "DATA_DIR": str(data),
@@ -222,7 +222,8 @@ def main():
     created = configure(ROOT, args)
     print(json.dumps(asyncio.run(initialize(ROOT / "backend/.env"))))
     print(
-        "Owner login is stored in backend/.env: BOOTSTRAP_ADMIN_EMAIL / BOOTSTRAP_ADMIN_PASSWORD."
+        "Initial Owner password: 123456. Change it immediately after login. "
+        "The owner email is stored in backend/.env (BOOTSTRAP_ADMIN_EMAIL)."
         if created
         else "Existing configuration and account passwords were preserved."
     )

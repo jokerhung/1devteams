@@ -48,7 +48,9 @@ async def seed(db, settings) -> None:
                 User(
                     email=settings.bootstrap_admin_email.lower(),
                     display_name="Owner",
-                    password_hash=await hash_password(settings.bootstrap_admin_password.get_secret_value()),
+                    password_hash=await hash_password(
+                        settings.bootstrap_admin_password.get_secret_value(), allow_bootstrap_default=True
+                    ),
                     system_role="OWNER",
                     avatar_initials="O",
                 )

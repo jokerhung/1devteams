@@ -68,7 +68,8 @@ def test_config_round_trip_and_preserve_existing(tmp_path):
     assert "https://teams.example.com" in config["CORS_ORIGINS"]
     assert config["TRUSTED_NATIVE_ACP"] == "false"
     assert config["ENABLE_REMOTE_TERMINAL"] == "false"
-    assert len(config["BOOTSTRAP_ADMIN_PASSWORD"]) >= 24
+    assert config["BOOTSTRAP_ADMIN_EMAIL"] == "owner@example.com"
+    assert config["BOOTSTRAP_ADMIN_PASSWORD"] == "123456"
     initializer.Fernet(config["APP_SECRET_KEY"].encode())
     files = [root / name for name in (".env", "backend/.env", "frontend/.env")]
     before = {file: file.read_bytes() for file in files}
@@ -114,7 +115,7 @@ def test_invalid_ports_rejected(tmp_path):
 
 
 def test_fresh_seed_and_idempotent_rerun(tmp_path, monkeypatch):
-    from app.core.security import verify_password
+    from app.core.security import hash_password, verify_password
     from app.services.workflow_templates import configured_graph
 
     initializer.configure(tmp_path, options())
@@ -131,6 +132,9 @@ def test_fresh_seed_and_idempotent_rerun(tmp_path, monkeypatch):
                 user = await db.scalar(initializer.select(initializer.User))
                 password_hash = user.password_hash
                 assert user.system_role == "OWNER"
+                assert user.email == "owner@example.com"
+                assert password_hash != "123456"
+                assert await verify_password("123456", password_hash)
                 assert await verify_password(values["BOOTSTRAP_ADMIN_PASSWORD"], password_hash)
                 agents = list((await db.scalars(initializer.select(initializer.Agent))).all())
                 templates = list((await db.scalars(initializer.select(initializer.WorkflowTemplate))).all())
@@ -147,6 +151,8 @@ def test_fresh_seed_and_idempotent_rerun(tmp_path, monkeypatch):
                 team.description = "My customized team"
                 template = next(item for item in templates if item.key == "bugfix_default")
                 template.instructions = {"n_ba": "My customized instructions"}
+                password_hash = await hash_password("Changed-owner-password-123")
+                user.password_hash = password_hash
                 await db.commit()
                 ids = (developer.id, team.id, template.id)
             assert await initializer.initialize(env_file) == counts
@@ -161,6 +167,42 @@ def test_fresh_seed_and_idempotent_rerun(tmp_path, monkeypatch):
             await engine.dispose()
 
     asyncio.run(scenario())
+
+
+def test_bootstrap_default_does_not_weaken_normal_password_rules():
+    from app.core.security import hash_password, verify_password
+
+    async def scenario():
+        with pytest.raises(ValueError):
+            await hash_password("123456")
+        with pytest.raises(ValueError):
+            await hash_password("abcdef", allow_bootstrap_default=True)
+        hashed = await hash_password("123456", allow_bootstrap_default=True)
+        assert hashed != "123456"
+        assert await verify_password("123456", hashed)
+
+    asyncio.run(scenario())
+
+
+def test_install_always_uses_repo_backend_venv(tmp_path, monkeypatch):
+    initializer.configure(tmp_path, options())
+    monkeypatch.setattr(installer, "ROOT", tmp_path)
+    monkeypatch.setattr(installer, "preflight_ports", lambda *args: None)
+    monkeypatch.setattr(installer, "ensure_node", lambda: tmp_path / "node")
+    monkeypatch.setattr(installer, "npm_command", lambda node: [node, "npm-cli.js"])
+    monkeypatch.setattr(installer.shutil, "which", lambda name: str(tmp_path / name))
+    monkeypatch.setattr(installer.sys, "argv", ["install.py", "--skip-providers", "--skip-browser"])
+    monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", str(tmp_path / "unrelated-environment"))
+    calls = []
+    monkeypatch.setattr(installer, "run", lambda args, **kwargs: calls.append((args, kwargs)))
+    installer.main()
+    sync_args, sync_options = calls[0]
+    assert sync_args[1:4] == ["sync", "--project", tmp_path / "backend"]
+    assert sync_options["env"]["UV_PROJECT_ENVIRONMENT"] == str(tmp_path / "backend/.venv")
+    python = (
+        tmp_path / "backend/.venv" / ("Scripts/python.exe" if installer.os.name == "nt" else "bin/python")
+    )
+    assert calls[1][0][:2] == [python, tmp_path / "scripts/install/initialize.py"]
 
 
 def test_empty_bootstrap_password_rejected(tmp_path):

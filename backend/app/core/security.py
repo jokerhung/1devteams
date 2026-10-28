@@ -8,8 +8,10 @@ from jose import JWTError, jwt
 from app.core.config import Settings
 
 
-async def hash_password(password: str) -> str:
-    if not 8 <= len(password) or len(password.encode()) > 72:
+async def hash_password(password: str, *, allow_bootstrap_default: bool = False) -> str:
+    # Only initial Owner seeding may use the explicitly requested installer default.
+    is_bootstrap_default = allow_bootstrap_default and password == "123456"
+    if (len(password) < 8 and not is_bootstrap_default) or len(password.encode()) > 72:
         raise ValueError("Mật khẩu cần ít nhất 8 ký tự và tối đa 72 byte")
     return (await asyncio.to_thread(bcrypt.hashpw, password.encode(), bcrypt.gensalt())).decode()
 

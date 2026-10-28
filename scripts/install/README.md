@@ -74,17 +74,21 @@ Không cần Homebrew. Nếu thiếu Apple Command Line Tools, hoàn tất hộp
 
 1. Chuẩn bị Git, uv và Python 3.12; dùng Node.js có sẵn nếu từ 22 trở lên,
    nếu không tải Node.js 22 vào `.tools/node` và kiểm tra SHA-256.
-2. Cài backend theo `uv.lock`, ACP adapters và frontend theo npm lockfile;
+2. Tạo virtual environment riêng `backend/.venv` bằng uv và cài backend theo
+   `uv.lock` vào đó, không cài Python package toàn hệ thống. Bộ cài luôn dùng
+   venv này kể cả khi shell đặt `UV_PROJECT_ENVIRONMENT` trỏ nơi khác.
+   Cài ACP adapters và frontend theo npm lockfile;
    cài Claude Code/Codex CLI cục bộ vào `.tools/providers` và Chromium cho
    Browser Worker. Các provider CLI lấy phiên bản hiện tại khi cài.
-3. Tạo `.env`, `backend/.env`, `frontend/.env` nếu chưa có; sinh ngẫu nhiên
-   JWT secret, khóa mã hóa Fernet và mật khẩu Owner. Không in mật khẩu ra log.
+3. Tạo `.env`, `backend/.env`, `frontend/.env` nếu chưa có; sinh
+   JWT secret và khóa mã hóa Fernet ngẫu nhiên; đặt mật khẩu Owner mặc định
+   `123456`. Database lưu hash của mật khẩu, không lưu mật khẩu thuần.
 4. Migrate SQLite tại `backend/data/aiteams.db`, tạo dữ liệu mẫu, build frontend.
    File cấu hình mới chỉ cấp quyền đọc/ghi cho tài khoản cài đặt.
 
 Dữ liệu sẵn có trên cài đặt mới:
 
-- **1 Owner**: email đã chọn, mặc định `owner@example.com`.
+- **1 Owner**: email đã chọn, mặc định `owner@example.com`; mật khẩu `123456`.
 - **9 agents**: `@ba`, `@developer`, `@tester`, `@devops`, `@leader`, `@planner`,
   `@designer`, `@workflow`, `@security`.
 - **3 teams**: Core Bugfix Squad, Feature Delivery Squad, Security Review Squad.
@@ -108,9 +112,13 @@ Linux/macOS:
 ./backend/.venv/bin/python scripts/install/run.py
 ```
 
-Truy cập `http://localhost:3060`. Lấy email/mật khẩu Owner tại
+Truy cập `http://localhost:3060`. Đăng nhập mặc định: **`owner@example.com` / `123456`**.
+Email/mật khẩu khởi tạo được lưu tại
 `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` trong `backend/.env`.
-Không chia sẻ hoặc commit file này. Đổi mật khẩu sau khi đăng nhập.
+Không chia sẻ hoặc commit file này. **Đổi mật khẩu ngay sau khi đăng nhập và
+trước khi mở truy cập qua mạng**: `123456` là mật khẩu công khai, không an toàn
+để dùng lâu dài. Mật khẩu mới phải có ít nhất 8 ký tự. Chạy lại bộ cài không
+reset mật khẩu đã đổi hoặc tài khoản đã có.
 
 Launcher tự mở trình duyệt sau khi hai dịch vụ sẵn sàng. Dùng `--no-open` để
 không mở browser; `--check` để khởi động, kiểm tra HTTP rồi dừng. Ctrl+C dừng
