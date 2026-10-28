@@ -176,6 +176,40 @@ def test_stop_only_verified_processes_and_descendants(tmp_path, monkeypatch):
     assert 102 in live
 
 
+def test_linux_relative_servers_require_matching_working_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(updater, "ROOT", tmp_path)
+    monkeypatch.setattr(updater.sys, "platform", "linux")
+    snapshot = {
+        100: (1, "python -m uvicorn app.main:app --port 8060", "original"),
+        101: (1, "next-server (v15)", "original"),
+        102: (1, "python -m uvicorn app.main:app --port 9000", "original"),
+    }
+    working_dirs = {100: tmp_path / "backend", 101: tmp_path / "frontend", 102: tmp_path / "other"}
+    original_resolve = Path.resolve
+
+    def resolve(path, **kwargs):
+        if path.parts[-1] == "cwd" and "proc" in path.parts:
+            return working_dirs[int(path.parts[-2])]
+        return original_resolve(path, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", resolve)
+    live = dict(snapshot)
+    monkeypatch.setattr(updater, "processes", lambda: live.copy())
+    calls = []
+
+    def killed(pid):
+        calls.append(pid)
+        live.pop(pid, None)
+
+    if os.name == "nt":
+        monkeypatch.setattr(updater.subprocess, "run", lambda args, **kw: killed(int(args[2])))
+    else:
+        monkeypatch.setattr(updater.os, "kill", lambda pid, sig: killed(pid))
+    updater.stop_installed()
+    assert set(calls) == {100, 101}
+    assert 102 in live
+
+
 @pytest.mark.parametrize("failure", ["download", "build", None])
 def test_update_sequence_and_failure_preserves_data(tmp_path, monkeypatch, failure):
     root = tmp_path / "installed"

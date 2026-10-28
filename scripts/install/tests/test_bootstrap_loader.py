@@ -19,6 +19,22 @@ def startup_code():
     return shell_code
 
 
+def test_repair_stop_helper_uses_latest_code_and_installed_root(tmp_path, monkeypatch, capsys):
+    shell = (ROOT / "install.sh").read_text(encoding="utf-8")
+    windows = (ROOT / "install.ps1").read_text(encoding="utf-8")
+    code = shell.split("<<'STOP_HELPER'\n", 1)[1].split("\nSTOP_HELPER", 1)[0]
+    assert code == windows.split("$stopHelper = @'\n", 1)[1].split("\n'@", 1)[0]
+    launcher = tmp_path / "scripts/install/update.py"
+    monkeypatch.setattr(sys, "argv", ["-", str(launcher)])
+    source = (
+        b"def stop_installed():\n    print('STOP', __file__)\n"
+        b"if __name__ == '__main__':\n    raise RuntimeError('Unexpected update')\n"
+    )
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *args, **kwargs: io.BytesIO(source))
+    exec(compile(code, "repair-helper", "exec"), {})
+    assert "STOP " + str(launcher) in capsys.readouterr().out
+
+
 @pytest.mark.parametrize("offline", [False, True])
 def test_update_helper_uses_installed_root_and_preserves_old_launcher(tmp_path, monkeypatch, capsys, offline):
     launcher = tmp_path / "scripts/install/run.py"

@@ -35,6 +35,11 @@ lockfile mới; không cài lại provider CLI/browser trong lượt cập nhậ
 Không chạy bước khởi tạo agents/teams/template hay reset Owner; migration và
 seed tương thích của ứng dụng vẫn chạy khi khởi động.
 
+Trước khi sửa chữa bản cài dở, bootstrap dùng Python hiện có để dừng server
+của đúng bản cài. Trên Linux, kiểm tra cả working directory trong `/proc` cho
+uvicorn/Next chạy với đường dẫn tương đối. Nếu cổng vẫn bận bởi ứng dụng khác,
+kiểm tra bằng `ss -ltnp` và dừng đúng dịch vụ đó trước khi chạy lại.
+
 Trước khi thay source, tạo bản phục hồi `backups/update-<UTC>/`: SQLite backup
 API lưu cả dữ liệu đã commit trong WAL, sao chép DATA_DIR và cấu hình, lưu source
 bị thay thế. `restore-paths.json` ghi đường dẫn database/DATA_DIR gốc, kể cả nằm

@@ -28,6 +28,7 @@ def test_shell_resumes_missing_backend_env_only_when_no_old_data(tmp_path, syste
         """#!/bin/bash
 set -eu
 [[ "$1" == --no-start ]]
+[[ -f .stop-checked ]]
 printf 'REPAIR_CALLED\\n'
 mkdir -p backend/.venv/bin
 printf 'JWT_SECRET=generated-for-new-install\\n' > backend/.env
@@ -46,6 +47,7 @@ chmod +x backend/.venv/bin/python
             BASH,
             "-c",
             'uname() { printf "%s\\n" "$BOOTSTRAP_TEST_SYSTEM"; }\n'
+            'python3() { cat >/dev/null; printf "STOP_CHECKED\\n"; touch .stop-checked; }\n'
             + (ROOT / "install.sh").read_text(encoding="utf-8"),
         ],
         env={**os.environ, "ONEDEVTEAMS_INSTALL_DIR": shell_path(target), "BOOTSTRAP_TEST_SYSTEM": system},
@@ -63,5 +65,6 @@ chmod +x backend/.venv/bin/python
     else:
         assert result.returncode == 0, result.stderr
         assert "REPAIR_CALLED" in result.stdout
+        assert result.stdout.index("STOP_CHECKED") < result.stdout.index("REPAIR_CALLED")
         assert "LATEST_UPDATER_CALLED" in result.stdout
         assert (target / "backend/.env").is_file()

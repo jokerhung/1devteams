@@ -46,6 +46,24 @@ if [[ -e "$install_target" || -L "$install_target" ]]; then
     fi
     printf '%s\n' "Resuming the incomplete installation at: $install_target"
     cd -- "$install_target"
+    repair_python="$python"
+    if [[ ! -x "$repair_python" ]]; then
+      repair_python="$(command -v python3 || true)"
+    fi
+    if [[ -n "$repair_python" ]]; then
+      "$repair_python" - "$install_target/scripts/install/update.py" <<'STOP_HELPER'
+import sys
+import time
+import urllib.request
+
+url = f'https://raw.githubusercontent.com/jokerhung/1devteams/main/scripts/install/update.py?t={time.time_ns()}'
+with urllib.request.urlopen(url, timeout=20) as response:
+    source = response.read().decode('utf-8')
+scope = {'__name__': 'repair_stop', '__file__': sys.argv[1]}
+exec(compile(source, url, 'exec'), scope)
+scope['stop_installed']()
+STOP_HELPER
+    fi
     # Finish prerequisite/configuration steps using the installed OS installer,
     # then use the latest updater below before starting the server.
     if [[ -t 0 ]]; then

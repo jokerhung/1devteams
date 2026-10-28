@@ -146,6 +146,19 @@ def owns_command(command):
 def stop_installed():
     snapshot = processes()
     selected = {pid for pid, (_, command, _) in snapshot.items() if owns_command(command)}
+    # Confirm relative commands through their real cwd, never through occupied ports.
+    if sys.platform.startswith("linux"):
+        for pid, (_, command, _) in snapshot.items():
+            try:
+                cwd = Path(f"/proc/{pid}/cwd").resolve(strict=True)
+            except OSError:
+                continue
+            if cwd == ROOT / "backend" and re.search(r"(?:^|\s)uvicorn\s+app\.main:app(?:\s|$)", command):
+                selected.add(pid)
+            elif cwd == ROOT / "frontend" and (
+                re.search(r"(?:^|\s|/)next(?:\s|$)", command) or command.startswith("next-server")
+            ):
+                selected.add(pid)
     # Include only descendants of verified application processes (PTYs, workers, etc.).
     while True:
         children = {pid for pid, (parent, _, _) in snapshot.items() if parent in selected}
