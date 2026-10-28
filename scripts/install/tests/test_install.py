@@ -257,3 +257,17 @@ def test_update_build_uses_existing_port_without_initializing_or_seeding(tmp_pat
     build = next(kwargs for args, kwargs in calls if "build" in args)
     assert build["env"]["BACKEND_URL"] == "http://127.0.0.1:8931"
     assert config.read_text() == "BACKEND_PORT=8931\nFRONTEND_PORT=3931\nCUSTOM=retained\n"
+
+
+@pytest.mark.parametrize(
+    "data_path", ["backend/aiteams.db", "backend/data/attachments/keep.bin", "custom.sqlite3"]
+)
+def test_missing_backend_env_with_existing_data_never_regenerates_secrets(tmp_path, data_path):
+    path = tmp_path / data_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("preserve me")
+    with pytest.raises(ValueError, match="Restore the original backend/.env"):
+        initializer.configure(tmp_path, options())
+    assert path.read_text() == "preserve me"
+    assert not (tmp_path / "backend/.env").exists()
+    assert not (tmp_path / ".env").exists()

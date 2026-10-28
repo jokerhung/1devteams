@@ -15,14 +15,48 @@ esac
 install_target="${ONEDEVTEAMS_INSTALL_DIR:-$HOME/1devTeams}"
 [[ "$install_target" == /* ]] || { printf '%s\n' 'ONEDEVTEAMS_INSTALL_DIR must be an absolute path.' >&2; exit 1; }
 if [[ -e "$install_target" || -L "$install_target" ]]; then
-  for required in scripts/install/run.py scripts/install/install.py backend/.env; do
+  for required in scripts/install/run.py scripts/install/install.py; do
     if [[ ! -f "$install_target/$required" ]]; then
       printf '%s\n' "Existing directory is not a complete installation: $install_target (missing $required). Nothing was overwritten." "Run bash scripts/install/$installer there to finish installing, or set ONEDEVTEAMS_INSTALL_DIR to a new directory." >&2
       exit 1
     fi
   done
   python="$install_target/backend/.venv/bin/python"
-  [[ -x "$python" ]] || { printf '%s\n' "Backend venv is missing or not executable. Run bash scripts/install/$installer in $install_target to repair it." >&2; exit 1; }
+  if [[ ! -f "$install_target/backend/.env" || ! -x "$python" ]]; then
+    [[ -f "$install_target/scripts/install/$installer" ]] || { printf '%s\n' "OS installer missing. Restore scripts/install/$installer to repair it." >&2; exit 1; }
+    if [[ ! -f "$install_target/backend/.env" ]]; then
+      # Never invent replacement encryption keys for an existing database or attachments.
+      old_database="$(
+        shopt -s nullglob dotglob nocaseglob
+        for candidate in "$install_target"/*.db* "$install_target"/*.sqlite* \
+          "$install_target/backend"/*.db* "$install_target/backend"/*.sqlite*; do
+          printf '%s\n' "$candidate"; break
+        done
+      )"
+      old_data="$(
+        shopt -s nullglob dotglob
+        for candidate in "$install_target/backend/data/"*; do
+          printf '%s\n' "$candidate"; break
+        done
+      )"
+      if [[ -n "$old_database" || -n "$old_data" ]]; then
+        printf '%s\n' 'backend/.env is missing, but existing database/data was found. Restore the original backend/.env (especially APP_SECRET_KEY and JWT_SECRET) from backup, then rerun this command. No files were changed.' >&2
+        exit 1
+      fi
+    fi
+    printf '%s\n' "Resuming the incomplete installation at: $install_target"
+    cd -- "$install_target"
+    # Finish prerequisite/configuration steps using the installed OS installer,
+    # then use the latest updater below before starting the server.
+    if [[ -t 0 ]]; then
+      bash "$install_target/scripts/install/$installer" --no-start "$@"
+    elif ( : </dev/tty ) >/dev/null 2>&1; then
+      bash "$install_target/scripts/install/$installer" --no-start "$@" </dev/tty
+    else
+      bash "$install_target/scripts/install/$installer" --no-start "$@" </dev/null
+    fi
+    [[ -f "$install_target/backend/.env" && -x "$python" ]] || { printf '%s\n' 'Repair did not create backend configuration/venv. Check the installer output above.' >&2; exit 1; }
+  fi
   printf '%s\n' "Updating the installed version at: $install_target" 'Configuration and user data will be preserved; a recovery backup is created before updating.'
   cd -- "$install_target"
   exec "$python" - "$install_target/scripts/install/run.py" <<'STARTUP_HELPER'

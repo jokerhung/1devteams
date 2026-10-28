@@ -39,7 +39,8 @@ script dừng tiến trình của đúng bản cài và sao lưu SQLite, dữ li
 source bị thay thế vào `backups/update-…`. Migration cần thiết vẫn chạy khi
 ứng dụng khởi động, không reset tài khoản hay dữ liệu người dùng.
 Nếu tải source thất bại, server đang chạy không bị dừng. Cài dở thiếu venv hoặc
-cấu hình sẽ có hướng dẫn sửa. Luồng tự cập nhật hiện hỗ trợ SQLite;
+cấu hình sẽ được tiếp tục cài tự động. Nếu mất `backend/.env` nhưng còn dữ liệu
+cũ, cần khôi phục file cấu hình gốc để giữ secret mã hóa. Luồng tự cập nhật hiện hỗ trợ SQLite;
 PostgreSQL cần sao lưu và nâng cấp thủ công.
 
 Bộ cài tạo virtual environment riêng tại `backend/.venv` bằng uv, cài dependency

@@ -53,7 +53,14 @@ từ `.tools/install-state.json`, biến port hiện có, CORS localhost và BAC
 trong cấu hình frontend; khi không có thông tin, dùng mặc định 3060/8060.
 Nếu các URL localhost gợi ý nhiều cổng khác nhau, yêu cầu cấu hình cổng rõ ràng.
 Chỉ tạo file gốc còn thiếu, không ghi đè file đã có hay sinh lại backend secret.
-Nếu thiếu venv hoặc `backend/.env`, bootstrap báo file thiếu và cách sửa bên dưới.
+Nếu thiếu venv hoặc `backend/.env`, bootstrap tự gọi bộ cài OS trong source
+hiện có với `--no-start`/`-NoStart` để hoàn tất dependency và cấu hình, rồi cập
+nhật bản mới nhất và khởi động. Lượt sửa chữa này có thể build hai lần và yêu
+cầu quyền sudo để cài công cụ hệ thống.
+Nếu mất `backend/.env` nhưng tìm thấy database hoặc dữ liệu trong `backend/data`,
+script dừng trước khi cài: cần khôi phục file gốc từ bản sao lưu, đặc biệt
+`APP_SECRET_KEY` và `JWT_SECRET`. Không thể tự suy ra secret cũ từ database.
+Chỉ thư mục chưa có dữ liệu mới được tạo backend config/Owner ban đầu.
 Thư mục không liên quan cũng không bị ghi đè. Nếu cài lỗi, source được giữ
 lại để tiếp tục cài; thư mục tải tạm được dọn sau khi tải/giải nén.
 

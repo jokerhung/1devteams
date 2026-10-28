@@ -36,6 +36,15 @@ def run_bootstrap(tmp_path, target, archive_root="1devteams-main"):
             }
             function powershell.exe {
                 Write-Output ('INSTALLER_CALLED ' + ($args -join ' '))
+                if ($args -contains '-NoStart') {
+                    $backend = Join-Path $env:ONEDEVTEAMS_INSTALL_DIR 'backend'
+                    New-Item -ItemType Directory -Force -Path (Join-Path $backend '.venv/Scripts') | Out-Null
+                    if (-not (Test-Path -LiteralPath (Join-Path $backend '.env'))) {
+                        Set-Content -LiteralPath (Join-Path $backend '.env') -Value 'JWT_SECRET=fresh-only'
+                    }
+                    $pythonPath = Join-Path $backend '.venv/Scripts/python.exe'
+                    Set-Content -LiteralPath $pythonPath -Value 'fake python'
+                }
                 $global:LASTEXITCODE = 0
             }
             $fakePython = Join-Path $env:ONEDEVTEAMS_INSTALL_DIR 'backend/.venv/Scripts/python.exe'
@@ -103,3 +112,35 @@ def test_windows_bootstrap_starts_installed_version_without_download(
     assert "SOURCE_DOWNLOAD" not in result.stdout
     assert "INSTALLER_CALLED" not in result.stdout
     assert all((target / name).read_text() == "unchanged fixture" for name in files)
+
+
+@pytest.mark.parametrize("data_path", [None, "backend/aiteams.db", "backend/data/uploads/keep.bin"])
+def test_windows_resumes_missing_backend_configuration_or_requires_original_secret(tmp_path, data_path):
+    target = tmp_path / "unfinished installation"
+    for name in (
+        "scripts/install/run.py",
+        "scripts/install/install.py",
+        "scripts/install/windows.ps1",
+        "backend/uv.lock",
+    ):
+        path = target / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("existing source")
+    if data_path:
+        path = target / data_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("preserve old data")
+    before = {file.relative_to(target): file.read_bytes() for file in target.rglob("*") if file.is_file()}
+    result = run_bootstrap(tmp_path, target)
+    if data_path:
+        assert result.returncode != 0
+        assert "Restore the original backend/.env" in result.stderr
+        assert "INSTALLER_CALLED" not in result.stdout
+        assert {
+            file.relative_to(target): file.read_bytes() for file in target.rglob("*") if file.is_file()
+        } == before
+    else:
+        assert result.returncode == 0, result.stderr
+        assert "-NoStart" in result.stdout
+        assert "EXISTING_RUNNER_CALLED" in result.stdout
+        assert (target / "backend/.env").is_file()

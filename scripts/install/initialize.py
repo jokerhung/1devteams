@@ -60,6 +60,21 @@ def write_new_env(path, values):
 def configure(root, args):
     if "@" not in args.admin_email:
         raise ValueError("Specify a valid owner email with --admin-email")
+    if not (root / "backend/.env").is_file():
+        databases = [
+            path
+            for folder in (root, root / "backend")
+            if folder.is_dir()
+            for path in folder.iterdir()
+            if ".db" in path.name.lower() or ".sqlite" in path.name.lower()
+        ]
+        data = root / "backend/data"
+        if databases or (data.is_dir() and any(data.iterdir())):
+            raise ValueError(
+                "backend/.env is missing but existing database/data was found. "
+                "Restore the original backend/.env, including APP_SECRET_KEY and JWT_SECRET, "
+                "before installing."
+            )
     ports = dotenv_values(root / ".env", interpolate=False) if (root / ".env").exists() else {}
     frontend = int(ports.get("FRONTEND_PORT") or args.frontend_port)
     backend = int(ports.get("BACKEND_PORT") or args.backend_port)
