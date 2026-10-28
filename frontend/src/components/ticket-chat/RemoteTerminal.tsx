@@ -38,7 +38,7 @@ export default function RemoteTerminal({
   active = true,
   commandTarget,
 }: {
-  projectId: string;
+  projectId?: string;
   docked?: boolean;
   reconnectKey?: number;
   active?: boolean;
@@ -208,7 +208,7 @@ export default function RemoteTerminal({
       const configTimeout = setTimeout(() => request.abort(), 20_000);
       try {
         const config = await apiFetch<{ enabled: boolean }>(
-          `/projects/${projectId}/terminal`,
+          projectId ? `/projects/${projectId}/terminal` : "/workspace-terminal",
           { signal: request.signal },
         );
         if (disposed || version !== generation) return;
@@ -236,7 +236,10 @@ export default function RemoteTerminal({
           term.focus();
         }
         resize();
-        const url = new URL(`/ws/terminal/${projectId}`, window.location.href);
+        const url = new URL(
+          projectId ? `/ws/terminal/${projectId}` : "/ws/workspace-terminal",
+          window.location.href,
+        );
         url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
         if (sessionId) {
           url.searchParams.set("session_id", sessionId);

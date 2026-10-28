@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from app.services.audit import terminal_audit
+from app.services.audit import audit, terminal_audit
 
 
 class TerminalBusyError(ValueError):
@@ -64,6 +64,7 @@ class Session:
     user_id: str
     project_id: str
     workspace: Path
+    workspace_only: bool = False
     id: str = field(default_factory=lambda: str(uuid4()))
     queue: asyncio.Queue[dict[str, Any]] = field(default_factory=lambda: asyncio.Queue(maxsize=256))
     initial_replay: str = ""
@@ -97,6 +98,8 @@ class PTYManager:
         cols: int,
         session_id: str | None = None,
         after_seq: int = 0,
+        *,
+        workspace_only: bool = False,
     ) -> Session:
         # A reconnect may reach us before the previous WebSocket finishes closing.
         old = self.sessions.get((uid, pid))
@@ -120,10 +123,10 @@ class PTYManager:
                 if len(self.sessions) >= self.settings.max_terminal_sessions:
                     raise ValueError("Đã đạt giới hạn terminal")
                 process = await asyncio.to_thread(spawn, workspace, rows, cols)
-                old = Session(process, uid, pid, workspace)
+                old = Session(process, uid, pid, workspace, workspace_only=workspace_only)
                 self.sessions[key] = old
                 old.reader = asyncio.create_task(self.read(old))
-                await terminal_audit(self.db, uid, pid, "open")
+                await self.audit_event(old, "open")
             old.initial_replay = "".join(frame["data"] for frame in old.history)
             old.resumed = resumed
             old.initial_seq = old.seq
@@ -195,7 +198,7 @@ class PTYManager:
         if session.reader:
             session.reader.cancel()
             await asyncio.gather(session.reader, return_exceptions=True)
-        await terminal_audit(self.db, session.user_id, session.project_id, "close")
+        await self.audit_event(session, "close")
         self.sessions.pop(key, None)
         session.closed.set()
         session.detached.set()
@@ -207,3 +210,17 @@ class PTYManager:
         async with self.lock:
             for key in list(self.sessions):
                 await self._close(key)
+
+    async def audit_event(self, session: Session, action: str, data: str = "") -> None:
+        if not session.workspace_only:
+            await terminal_audit(self.db, session.user_id, session.project_id, action, data)
+            return
+        async with self.db() as db:
+            await audit(
+                db,
+                "terminal.workspace." + action,
+                str(session.workspace),
+                user_id=session.user_id,
+                payload={"data": data},
+            )
+            await db.commit()

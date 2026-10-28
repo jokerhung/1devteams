@@ -201,6 +201,10 @@ truy cập phù hợp.
 
 ## Chạy lại / xử lý lỗi
 
+- Nếu thấy `getcwd() failed` / `Current directory does not exist`, shell đang
+  đứng trong thư mục đã bị xóa. Chạy `cd "$HOME"` rồi gọi lại bootstrap, hoặc
+  `cd "$HOME/1devTeams"` và chạy `bash scripts/install/linux.sh` để tiếp tục
+  cài dở trên Linux. Bộ cài mới tự chuyển vào thư mục hợp lệ trước khi gọi uv.
 - Chạy lại lệnh bootstrap một dòng trên bản đã cài sẽ chỉ khởi động bản đó.
   Nếu ứng dụng đang chạy trong terminal khác, dùng URL tại đó; launcher không
   kill tiến trình hoặc tạo bản thứ hai trên cổng đang bận. Nếu không tải được

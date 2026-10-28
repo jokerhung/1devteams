@@ -13,6 +13,10 @@ export default function nextConfig(phase: string): NextConfig {
       ).replace(/\/$/, "");
       return [
         {
+          source: "/ws/workspace-terminal",
+          destination: `${backend}/ws/workspace-terminal`,
+        },
+        {
           source: "/ws/terminal/:projectId",
           destination: `${backend}/ws/terminal/:projectId`,
         },

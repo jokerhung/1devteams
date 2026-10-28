@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # One-line entrypoint for Linux and macOS; no Git/Python/Node prerequisite.
 set -euo pipefail
+# A terminal may still point at a directory deleted during a previous install.
+# Recover before invoking shells, uv or Python, all of which require a valid cwd.
+if ! pwd -P >/dev/null 2>&1; then
+  cd -- "${HOME:?HOME is required}"
+fi
 case "$(uname -s)" in
   Linux) installer=linux.sh ;;
   Darwin) installer=macos.sh ;;
@@ -19,6 +24,7 @@ if [[ -e "$install_target" || -L "$install_target" ]]; then
   python="$install_target/backend/.venv/bin/python"
   [[ -x "$python" ]] || { printf '%s\n' "Backend venv is missing or not executable. Run bash scripts/install/$installer in $install_target to repair it." >&2; exit 1; }
   printf '%s\n' "Starting the installed version at: $install_target" 'App source and dependencies stay unchanged. Loading the latest startup helper in memory.'
+  cd -- "$install_target"
   exec "$python" - "$install_target/scripts/install/run.py" <<'STARTUP_HELPER'
 import runpy
 import sys
@@ -63,6 +69,7 @@ mkdir -p -- "$(dirname -- "$install_target")"
 # Reserve the destination exclusively before copying the extracted source.
 mkdir -- "$install_target"
 cp -R "$source_root/." "$install_target/"
+cd -- "$install_target"
 printf '%s\n' "Source installed at: $install_target"
 # Restore interactive stdin for sudo / Apple's developer-tools prompt when piped.
 if [[ -t 0 ]]; then

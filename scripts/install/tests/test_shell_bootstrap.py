@@ -78,7 +78,7 @@ def test_shell_rerun_starts_existing_app_without_download(tmp_path, system, stat
             python = target / "backend/.venv/bin/python"
             python.parent.mkdir(parents=True)
             python.write_text(
-                '#!/bin/sh\nprintf "EXISTING_RUNNER_CALLED %s\\n" "$@"\n'
+                '#!/bin/sh\nprintf "RUNNER_CWD %s\\n" "$PWD"\nprintf "EXISTING_RUNNER_CALLED %s\\n" "$@"\n'
                 + ("exit 7\n" if state == "startup_failure" else "exit 0\n"),
                 encoding="utf-8",
             )
@@ -103,6 +103,7 @@ def test_shell_rerun_starts_existing_app_without_download(tmp_path, system, stat
         assert result.returncode == (0 if state == "installed" else 7), result.stderr
         assert "EXISTING_RUNNER_CALLED" in result.stdout
         assert "scripts/install/run.py" in result.stdout
+        assert "RUNNER_CWD " + shell_path(target) in result.stdout
     else:
         assert result.returncode != 0
         assert "finish installing" in result.stderr or "repair it" in result.stderr

@@ -11,8 +11,7 @@ import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { TerminalDock } from "@/components/ticket-chat/TerminalDock";
 import { WorkspaceFiles } from "@/components/ticket-chat/WorkspaceFiles";
-import { allProjects } from "@/lib/projects";
-import { keys } from "@/lib/query-keys";
+import { apiFetch } from "@/lib/api";
 import { AgentChat } from "./agent-chat";
 
 type Tools = {
@@ -54,64 +53,45 @@ export function WorkspaceToolsArea({ children }: { children: ReactNode }) {
   const tools = useWorkspaceTools();
   const pathname = usePathname();
   const routeProject = pathname.match(/^\/projects\/([^/]+)/)?.[1];
-  const [selected, setSelected] = useState("");
-  const [createdProject, setCreatedProject] = useState("");
-  const projects = useQuery({
-    queryKey: [...keys.projects, "list"],
-    queryFn: allProjects,
+  const [createdTarget, setCreatedTarget] = useState("");
+  const workspace = useQuery({
+    queryKey: ["workspace-terminal"],
+    queryFn: ({ signal }) =>
+      apiFetch<{ enabled: boolean; workspace: string }>("/workspace-terminal", {
+        signal,
+      }),
+    enabled: tools.terminalOpen && !routeProject,
+    retry: false,
   });
+  const target = routeProject
+    ? `project:${routeProject}`
+    : workspace.data && !workspace.error
+      ? `workspace:${workspace.data.workspace}`
+      : "";
   useEffect(() => {
-    try {
-      setSelected(localStorage.getItem("lastProjectId") || "");
-    } catch {
-      /* Storage is optional. */
-    }
-  }, []);
-  useEffect(() => {
-    if (routeProject) setSelected(routeProject);
-  }, [routeProject]);
-  const projectId =
-    projects.data?.items.find((p) => p.id === (routeProject || selected))?.id ||
-    "";
-  useEffect(() => {
-    if (tools.terminalOpen && projectId) setCreatedProject(projectId);
-  }, [tools.terminalOpen, projectId]);
+    if (tools.terminalOpen && target) setCreatedTarget(target);
+  }, [tools.terminalOpen, target]);
   const showTools = tools.terminalOpen;
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-stone-300/80 bg-white shadow-sm">
       {showTools && (
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stone-200 px-4 py-2 text-xs max-lg:pt-14">
-          <label htmlFor="tools-project">Workspace</label>
-          <select
-            id="tools-project"
-            aria-label="Project cho terminal"
-            className="inp !w-auto max-w-full text-xs"
-            value={projectId}
-            disabled={!!routeProject}
-            onChange={(event) => {
-              setSelected(event.target.value);
-              try {
-                localStorage.setItem("lastProjectId", event.target.value);
-              } catch {
-                /* Storage is optional. */
-              }
-            }}
+          <span>Workspace</span>
+          <span
+            className="truncate font-medium"
+            title={!routeProject ? workspace.data?.workspace : undefined}
           >
-            <option value="">Chọn project</option>
-            {projects.data?.items.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </select>
-          {projects.error ? (
+            {routeProject ? "Project hiện tại" : workspace.data?.workspace}
+          </span>
+          {!routeProject && workspace.error ? (
             <span role="alert" className="text-red-700">
-              {projects.error.message}
+              {workspace.error.message}
             </span>
           ) : (
-            !projectId && (
+            !routeProject &&
+            workspace.isPending && (
               <span className="text-stone-500">
-                Chọn project để mở terminal.
+                Đang lấy thư mục cho phép đầu tiên…
               </span>
             )
           )}
@@ -119,9 +99,10 @@ export function WorkspaceToolsArea({ children }: { children: ReactNode }) {
       )}
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <TerminalDock
-          projectId={projectId}
-          open={tools.terminalOpen && !!projectId}
-          created={!!projectId && createdProject === projectId}
+          projectId={routeProject}
+          workspace={!routeProject ? workspace.data?.workspace : undefined}
+          open={tools.terminalOpen && !!target}
+          created={!!target && createdTarget === target}
           onClose={tools.toggleTerminal}
         >
           {children}

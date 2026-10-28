@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from app.core.deps import require_project
 from app.core.security import token_subject
 from app.db.models import User
-from app.services.audit import terminal_audit
+from app.services.workspace_terminal import default_terminal_workspace
 from app.ws.ticket_ws import authenticate
 
 router = APIRouter()
@@ -19,6 +19,15 @@ logger = logging.getLogger(__name__)
 
 @router.websocket("/ws/terminal/{project_id}")
 async def terminal_socket(socket: WebSocket, project_id: UUID):
+    await serve_terminal(socket, project_id)
+
+
+@router.websocket("/ws/workspace-terminal")
+async def workspace_terminal_socket(socket: WebSocket):
+    await serve_terminal(socket)
+
+
+async def serve_terminal(socket: WebSocket, project_id: UUID | None = None):
     await socket.accept()
     session = None
     receive = output = None
@@ -36,20 +45,25 @@ async def terminal_socket(socket: WebSocket, project_id: UUID):
                 raise ValueError("Origin not allowed")
         user, token = await authenticate(socket, cookie_token)
         async with socket.app.state.db_session() as db:
-            project = await require_project(db, str(project_id), user, write=True)
-            workspace = await asyncio.to_thread(Path(project.workspace_path).resolve)
+            if project_id is None:
+                workspace = await asyncio.to_thread(default_terminal_workspace, settings, user)
+            else:
+                project = await require_project(db, str(project_id), user, write=True)
+                workspace = await asyncio.to_thread(Path(project.workspace_path).resolve)
             if not any(workspace.is_relative_to(root) for root in settings.workspace_roots):
                 raise ValueError("Workspace không được phép")
+        scope = str(project_id) if project_id is not None else f"workspace:{workspace}"
         manager = socket.app.state.pty_manager
         after_seq = max(0, int(socket.query_params.get("after_seq", "0")))
         session = await manager.attach(
             user.id,
-            str(project_id),
+            scope,
             workspace,
             30,
             120,
             socket.query_params.get("session_id"),
             after_seq,
+            workspace_only=project_id is None,
         )
         snapshot_seq = session.initial_seq
         await socket.send_json(
@@ -73,11 +87,20 @@ async def terminal_socket(socket: WebSocket, project_id: UUID):
                 raise ValueError("Phiên đăng nhập hết hạn")
             # Permission checks are periodic, not a DB round trip per keystroke/chunk.
             if time.monotonic() - checked_at >= 15:
+                if not settings.enable_remote_terminal:
+                    raise ValueError("Remote terminal đã bị tắt")
                 async with socket.app.state.db_session() as db:
                     actor = await db.get(User, user.id)
                     if actor is None:
                         raise ValueError("Tài khoản không còn tồn tại")
-                    await require_project(db, str(project_id), actor, write=True)
+                    if project_id is None:
+                        current = await asyncio.to_thread(default_terminal_workspace, settings, actor)
+                        if current != workspace:
+                            raise ValueError("Thư mục cho phép đã thay đổi; hãy kết nối lại terminal")
+                    else:
+                        await require_project(db, str(project_id), actor, write=True)
+                    if not any(workspace.is_relative_to(root) for root in settings.workspace_roots):
+                        raise ValueError("Workspace không được phép")
                 checked_at = time.monotonic()
             if not done or time.monotonic() - last_ping >= 15:
                 await socket.send_json({"type": "ping"})
@@ -98,7 +121,7 @@ async def terminal_socket(socket: WebSocket, project_id: UUID):
                     if not isinstance(data, str) or len(data) > 16384:
                         raise ValueError("Terminal input không hợp lệ")
                     if settings.terminal_audit_input:
-                        await terminal_audit(manager.db, user.id, str(project_id), "input", data)
+                        await manager.audit_event(session, "input", data)
                     await asyncio.to_thread(session.process.write, data)
                 elif frame.get("type") == "resize":
                     cols, rows = int(frame["cols"]), int(frame["rows"])
@@ -111,7 +134,11 @@ async def terminal_socket(socket: WebSocket, project_id: UUID):
     except (ValueError, HTTPException, TimeoutError, KeyError, TypeError, OSError) as error:
         if isinstance(error, HTTPException):
             reason = (
-                "Bạn cần quyền MAINTAINER để mở terminal"
+                (
+                    "Chỉ quản trị viên được mở terminal ngoài project"
+                    if project_id is None
+                    else "Bạn cần quyền MAINTAINER để mở terminal"
+                )
                 if error.status_code == 403
                 else "Không xác thực được phiên terminal; hãy đăng nhập lại"
             )

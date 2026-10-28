@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+if ! pwd -P >/dev/null 2>&1; then
+  cd -- "${HOME:?HOME is required}"
+fi
 if [[ "${1:-}" == '--help' ]]; then
   printf '%s\n' 'Usage: bash scripts/install/macos.sh [--admin-email EMAIL] [--workspace PATH] [--public-url URL] [--trust-native-agents] [--enable-remote-terminal] [--skip-providers] [--skip-browser] [--no-start]'
   exit 0
@@ -8,6 +11,7 @@ fi
 [[ $EUID -ne 0 ]] || { printf '%s\n' 'Run as your normal user, not sudo.' >&2; exit 1; }
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 [[ -f "$repo_root/backend/uv.lock" ]] || { printf '%s\n' 'Extract the complete repository first.' >&2; exit 1; }
+cd -- "$repo_root"
 # Apple's developer tools supply Git and compilers; no Homebrew is required.
 if ! xcode-select -p >/dev/null 2>&1; then
   xcode-select --install || true

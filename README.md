@@ -133,7 +133,9 @@ Linux/macOS; không xem bảng trên là chứng nhận tương thích mọi c�
 6. **Workspace và ảnh đính kèm:** duyệt file trong thư mục được phép, xem ảnh
    phóng to trong popup và tải ảnh từ cuộc trò chuyện.
 7. **Terminal thời gian thực:** WebSocket hai chiều, gom output theo frame,
-   WebGL với fallback và lấy bù output khi kết nối lại.
+   WebGL với fallback và lấy bù output khi kết nối lại. Trong project và trang
+   con, terminal dùng workspace của project; ngoài project, Owner/Admin tự mở
+   terminal tại thư mục đầu tiên trong danh sách cho phép, không cần chọn project.
 8. **Browser Worker & thông báo:** agent có quyền browser có thể thao tác qua
    Playwright; thông báo trong ứng dụng, toast và browser notification khi
    trình duyệt hỗ trợ và người dùng đã cấp quyền.

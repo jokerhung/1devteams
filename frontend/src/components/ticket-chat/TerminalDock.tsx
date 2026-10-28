@@ -25,12 +25,14 @@ const RemoteTerminal = dynamic(() => import("./RemoteTerminal"), {
 
 export function TerminalDock({
   projectId,
+  workspace,
   open,
   created,
   onClose,
   children,
 }: {
-  projectId: string;
+  projectId?: string;
+  workspace?: string;
   open: boolean;
   created: boolean;
   onClose: () => void;
@@ -113,7 +115,7 @@ export function TerminalDock({
         <div className="min-h-0 flex-1 overflow-auto p-2">
           {created && (
             <RemoteTerminal
-              key={projectId}
+              key={projectId || workspace}
               projectId={projectId}
               docked
               reconnectKey={reconnectKey}

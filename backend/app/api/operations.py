@@ -14,6 +14,7 @@ from app.core.deps import DB, Admin, CurrentUser, fail, require_project
 from app.db.models import AuditLog, Ticket, TicketMessage
 from app.services.audit import terminal_audit
 from app.services.common import fields
+from app.services.workspace_terminal import default_terminal_workspace
 
 router = APIRouter(tags=["Operations"])
 
@@ -74,6 +75,15 @@ class TerminalInput(BaseModel):
     data: str = Field(default="", max_length=16384)
     cols: int = Field(default=120, ge=10, le=500)
     rows: int = Field(default=30, ge=2, le=200)
+
+
+@router.get("/workspace-terminal")
+async def workspace_terminal_config(request: Request, user: Admin):
+    try:
+        workspace = await asyncio.to_thread(default_terminal_workspace, request.app.state.settings, user)
+    except (ValueError, OSError) as error:
+        fail(400, str(error), "invalid_workspace")
+    return {"enabled": request.app.state.settings.enable_remote_terminal, "workspace": str(workspace)}
 
 
 @router.get("/projects/{pid}/terminal")
