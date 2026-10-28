@@ -6,6 +6,7 @@ import json
 import os
 import sqlite3
 import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
@@ -16,6 +17,18 @@ spec = importlib.util.spec_from_file_location(
 )
 updater = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(updater)
+
+
+def test_repair_module_imports_without_python311_datetime_utc():
+    # Python 3.10 has timezone.utc but no datetime.UTC. Exercise the real import
+    # in a child so the simulated older stdlib does not affect other tests.
+    code = (
+        "import datetime, runpy, sys; "
+        "datetime.__dict__.pop('UTC', None); "
+        "scope = runpy.run_path(sys.argv[1], run_name='repair_stop'); "
+        "assert callable(scope['stop_installed'])"
+    )
+    subprocess.run([sys.executable, "-c", code, str(Path(updater.__file__))], check=True)
 
 
 def archive(monkeypatch, extra=None):

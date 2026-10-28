@@ -14,7 +14,7 @@ import textwrap
 import time
 import urllib.request
 import zipfile
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -387,7 +387,9 @@ def main():
             installer = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(installer)
             installer.preflight_ports(ROOT, frontend, backend)
-            backup = ROOT / "backups" / ("update-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ"))
+            # The repair helper can run on the OS Python 3.10 before uv installs 3.12.
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")  # noqa: UP017
+            backup = ROOT / "backups" / ("update-" + timestamp)
             print(f"Saving recovery backup: {backup}", flush=True)
             backup_data(backup, databases, data_dir)
             apply_source(source, backup, [*databases, data_dir])
