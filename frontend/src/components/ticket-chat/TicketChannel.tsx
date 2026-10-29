@@ -32,6 +32,7 @@ import { Composer } from "./Composer";
 import { RightDrawer } from "./RightDrawer";
 import { AgentLogDialog } from "./AgentLogDialog";
 import { InlineConfirmBox } from "./InlineConfirmBox";
+import { WorkspaceFiles } from "./WorkspaceFiles";
 export function TicketChannel({
   pid,
   wid,
@@ -129,6 +130,7 @@ function Channel({
   const [store] = useState(() => createTicketStore(ticket.status));
   const state = useStore(store);
   const [drawer, setDrawer] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
   const [log, setLog] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [historyPage, setHistoryPage] = useState<HistoryPage | null>(null);
@@ -330,6 +332,7 @@ function Channel({
         canReport={!!config.data?.can_report}
         canRelease={!!config.data?.can_confirm}
         onDrawer={() => setDrawer(true)}
+        onFiles={() => setFilesOpen((open) => !open)}
         onAction={async (action) => {
           await send(`/tickets/${tid}/${action}`);
           await refresh();
@@ -580,6 +583,14 @@ function Channel({
             </footer>
           </div>
         </div>
+        {filesOpen && (
+          <WorkspaceFiles
+            key={tid}
+            projectId={project.id}
+            initialDirectory={`docs/tickets/${tid}`}
+            onClose={() => setFilesOpen(false)}
+          />
+        )}
       </div>
       {drawer &&
         (version.data ? (

@@ -31,9 +31,11 @@ type TextFile = { path: string; content: string; size: number };
 
 export function WorkspaceFiles({
   projectId,
+  initialDirectory = "",
   onClose,
 }: {
   projectId?: string;
+  initialDirectory?: string;
   onClose: () => void;
 }) {
   const [width, setWidth] = useState(280);
@@ -63,7 +65,7 @@ export function WorkspaceFiles({
     drag.current = null;
     setResizing(false);
   };
-  const [directory, setDirectory] = useState("");
+  const [directory, setDirectory] = useState(initialDirectory);
   const [root, setRoot] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [preview, setPreview] = useState(false);

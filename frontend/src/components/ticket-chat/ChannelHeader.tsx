@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import type { Project, Workflow, Ticket } from "@/lib/types";
 import { StatusBadge, ConfirmDialog } from "@/components/ui-app/primitives";
 import { DeleteEntityButton } from "@/components/ui-app/delete-entity-button";
+import { FileText } from "lucide-react";
 export function ChannelHeader({
   ticket,
   project,
@@ -14,6 +15,7 @@ export function ChannelHeader({
   canReport,
   canRelease,
   onDrawer,
+  onFiles,
   onAction,
 }: {
   ticket: Ticket;
@@ -24,6 +26,7 @@ export function ChannelHeader({
   canReport: boolean;
   canRelease: boolean;
   onDrawer: () => void;
+  onFiles: () => void;
   onAction: (action: "cancel" | "retry" | "force-release") => Promise<void>;
 }) {
   const [cancel, setCancel] = useState(false);
@@ -69,6 +72,14 @@ export function ChannelHeader({
             onClick={onDrawer}
           >
             ⚙
+          </button>
+          <button
+            className="btn btn-light"
+            aria-label="Mở tài liệu của ticket"
+            title="Tài liệu do agent tạo"
+            onClick={onFiles}
+          >
+            <FileText size={16} aria-hidden="true" />
           </button>
           <details className="relative">
             <summary
