@@ -32,3 +32,5 @@ class WorkflowState(TypedDict, total=False):
     wrote_files: bool
     error: str | None
     node_statuses: dict[str, str]
+    orchestrator_task: str
+    orchestrator_summary: str

@@ -528,7 +528,15 @@ def make_node(node: Node, agents: dict[str, AgentRuntimeConfig]) -> Callable[...
             await ctx.status(
                 "FAILED" if state.get("error") else "COMPLETED",
                 nid,
-                state.get("release") or {"error": state.get("error")},
+                state.get("release")
+                or {
+                    "error": state.get("error"),
+                    **(
+                        {"summary": state["orchestrator_summary"]}
+                        if state.get("orchestrator_summary")
+                        else {}
+                    ),
+                },
             )
             await ctx.pool.close_ticket(ctx.ticket_id)
             return {}

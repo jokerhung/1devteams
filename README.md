@@ -130,7 +130,8 @@ Linux/macOS; không xem bảng trên là chứng nhận tương thích mọi c�
 2. **Chat trực tiếp với agent:** không bắt buộc tạo ticket; chọn project hoặc
    để trống, tự lấy project theo trang đang mở khi phù hợp.
 3. **Workflow trực quan:** dựng luồng bằng canvas, dùng template, kiểm tra tính
-   hợp lệ và quản lý phiên bản trước khi chạy.
+   hợp lệ và quản lý phiên bản trước khi chạy. Hoặc dùng **Orchestrator** để
+   chọn agent điều phối và nhập instruction, không cần vẽ luồng.
 4. **Ticket theo quy trình:** chuyển việc giữa BA, Developer, Tester và DevOps;
    hỗ trợ hỏi lại người dùng và bước phê duyệt trước Git release.
 5. **Theo dõi lượt chạy:** hiển thị trạng thái đang làm việc, các action gần nhất
@@ -144,6 +145,22 @@ Linux/macOS; không xem bảng trên là chứng nhận tương thích mọi c�
 8. **Browser Worker & thông báo:** agent có quyền browser có thể thao tác qua
    Playwright; thông báo trong ứng dụng, toast và browser notification khi
    trình duyệt hỗ trợ và người dùng đã cấp quyền.
+
+### Orchestrator trong project
+
+1. Thêm AI Team/agents vào project; cần một agent điều phối và ít nhất một agent thực hiện.
+2. Chọn **Tạo Orchestrator**, chọn agent điều phối và nhập instruction, ví dụ:
+   “BA phân tích → Planner lập kế hoạch → Developer triển khai → Tester kiểm thử;
+   nếu FAIL giao Developer sửa rồi kiểm thử lại; nếu PASS tổng kết bàn giao.”
+3. Bấm **Lưu & xuất bản**, tạo ticket và bắt đầu chạy. Agent điều phối tự chọn
+   thành viên tiếp theo từ các agents đang hoạt động trong project.
+
+Các agent dùng runtime/model/tools và quyền đã cấu hình. Kết quả từng lượt được
+lưu vào lịch sử/checkpoint và chia sẻ cho các lượt sau. Mặc định sau 20 lượt điều
+phối, hệ thống hỏi người dùng trước khi tiếp tục (cấu hình từ 1–40 lượt).
+Khi chọn FINISH, Orchestrator tổng kết và hoàn tất ticket. Commit/push vẫn dùng
+thao tác phát hành có xác nhận hiện có. Chỉnh instruction/agent điều phối tạo
+phiên bản mới; ticket cũ giữ nguyên phiên bản đã lưu.
 
 ## 🛡️ Kiến trúc và bảo mật
 

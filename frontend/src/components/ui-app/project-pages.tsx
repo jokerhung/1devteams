@@ -1,10 +1,15 @@
 "use client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Settings, Users, Folder } from "lucide-react";
+import { Plus, Settings, Users, Folder, ChevronDown } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { apiFetch, send } from "@/lib/api";
 import { keys } from "@/lib/query-keys";
 import { allProjects } from "@/lib/projects";
@@ -21,7 +26,6 @@ import type {
 } from "@/lib/types";
 import {
   AgentPill,
-  ConfirmDialog,
   EmptyState,
   ErrorState,
   Loading,
@@ -32,6 +36,7 @@ import {
 } from "./primitives";
 import { ProjectDialog } from "./project-dialog";
 import { CreateTicketDialog } from "./ticket-dialog";
+import { DeleteEntityButton } from "./delete-entity-button";
 export function TicketTable({
   tickets,
   pid,
@@ -52,6 +57,9 @@ export function TicketTable({
             <th>Trạng thái</th>
             <th>Đang chạy</th>
             <th>Cập nhật</th>
+            <th>
+              <span className="sr-only">Thao tác</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -83,6 +91,9 @@ export function TicketTable({
               </td>
               <td className="whitespace-nowrap text-[11px] text-stone-500">
                 {new Date(t.updated_at).toLocaleString("vi-VN")}
+              </td>
+              <td>
+                <DeleteEntityButton kind="ticket" id={t.id} name={t.code} />
               </td>
             </tr>
           ))}
@@ -124,14 +135,16 @@ export function ProjectsPage() {
       ) : (
         <div className="grid gap-3 xl:grid-cols-2">
           {projects.data?.items.map((p) => (
-            <Link
-              className="card hover:border-stone-400"
-              key={p.id}
-              href={`/projects/${p.id}`}
-            >
+            <article className="card hover:border-stone-400" key={p.id}>
               <h2 className="flex items-center gap-2 text-sm font-semibold">
                 <Folder size={16} />
-                {p.name}
+                <Link
+                  className="min-w-0 flex-1 hover:underline"
+                  href={`/projects/${p.id}`}
+                >
+                  {p.name}
+                </Link>
+                <DeleteEntityButton kind="project" id={p.id} name={p.name} />
               </h2>
               <p className="mt-3 truncate font-mono text-[11px] text-stone-500">
                 {p.workspace_path}
@@ -139,7 +152,7 @@ export function ProjectsPage() {
               <p className="mt-2 text-xs text-stone-400">
                 ⑂ {p.default_branch}
               </p>
-            </Link>
+            </article>
           ))}
         </div>
       )}
@@ -203,10 +216,32 @@ export function ProjectOverview({
         >
           <Settings size={14} />
         </Link>
-        <Link className="btn btn-dark" href={`/projects/${pid}/workflows/new`}>
-          <Plus size={14} />
-          Tạo workflow
-        </Link>
+        <DeleteEntityButton
+          kind="project"
+          id={pid}
+          name={p.name}
+          redirectTo="/projects"
+        />
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            id={`project-create-${pid}`}
+            className="btn btn-dark"
+          >
+            <Plus size={14} /> Tạo mới <ChevronDown size={14} />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="bottom" align="end" className="min-w-44">
+            <DropdownMenuItem
+              render={<Link href={`/projects/${pid}/workflows/new`} />}
+            >
+              Workflow
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              render={<Link href={`/projects/${pid}/orchestrators/new`} />}
+            >
+              Orchestrator
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </PageHeader>
       {!workflowsOnly && (
         <>
@@ -338,9 +373,7 @@ export function ProjectOverview({
 }
 export function ProjectSettings({ pid }: { pid: string }) {
   const client = useQueryClient();
-  const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const p = useQuery({
     queryKey: keys.project(pid),
@@ -412,27 +445,13 @@ export function ProjectSettings({ pid }: { pid: string }) {
         <p className="my-2 text-xs text-stone-500">
           Xoá dữ liệu project, workflow và ticket trong 1devTeams.
         </p>
-        <button
-          className="btn btn-light text-red-700"
-          onClick={() => setDeleting(true)}
-        >
-          Xoá project
-        </button>
+        <DeleteEntityButton
+          kind="project"
+          id={pid}
+          name={p.data.name}
+          redirectTo="/projects"
+        />
       </div>
-      {deleting && (
-        <ConfirmDialog
-          title="Xoá project?"
-          onClose={() => setDeleting(false)}
-          onConfirm={async () => {
-            await send(`/projects/${pid}`, undefined, "DELETE");
-            localStorage.removeItem("lastProjectId");
-            await client.invalidateQueries({ queryKey: ["projects"] });
-            router.replace("/projects");
-          }}
-        >
-          Dữ liệu project trong 1devTeams sẽ bị xoá vĩnh viễn.
-        </ConfirmDialog>
-      )}
     </>
   );
 }

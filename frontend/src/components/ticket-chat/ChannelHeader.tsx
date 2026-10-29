@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import type { Project, Workflow, Ticket } from "@/lib/types";
 import { StatusBadge, ConfirmDialog } from "@/components/ui-app/primitives";
+import { DeleteEntityButton } from "@/components/ui-app/delete-entity-button";
 export function ChannelHeader({
   ticket,
   project,
@@ -54,6 +55,14 @@ export function ChannelHeader({
             ♙ {memberCount}
           </span>
           <StatusBadge status={status} />
+          {canReport && (
+            <DeleteEntityButton
+              kind="ticket"
+              id={ticket.id}
+              name={ticket.code}
+              redirectTo={`/projects/${project.id}/workflows/${workflow.id}`}
+            />
+          )}
           <button
             className="btn btn-light"
             aria-label="Xem workflow của ticket"

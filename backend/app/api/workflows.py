@@ -6,9 +6,10 @@ from sqlalchemy import func, select, update
 
 from app.core.deps import DB, Admin, CurrentUser, fail, record, require_project
 from app.db.models import Agent, Ticket, Workflow, WorkflowTemplate, WorkflowVersion
-from app.schemas.common import Success
+from app.schemas.common import DeletionPreview, Success
 from app.schemas.workflow import (
     Graph,
+    OrchestratorConfig,
     ValidationOut,
     WorkflowCreate,
     WorkflowDuplicate,
@@ -130,8 +131,21 @@ async def list_workflows(pid: UUID, db: DB, user: CurrentUser, include_archived:
 @router.post("/projects/{pid}/workflows", response_model=WorkflowOut, status_code=201)
 async def create_workflow(pid: UUID, body: WorkflowCreate, db: DB, user: CurrentUser):
     await require_project(db, str(pid), user, write=True)
-    graph = await configured_graph(db, body.template, await effective_agents(db, str(pid)))
-    entity = Workflow(project_id=str(pid), **body.model_dump(exclude={"template"}), graph=graph.model_dump())
+    agents = await effective_agents(db, str(pid))
+    if body.orchestrator:
+        from app.services.orchestrator import orchestrator_graph
+
+        try:
+            graph = orchestrator_graph(body.orchestrator, agents)
+        except ValueError as error:
+            fail(422, str(error))
+    else:
+        graph = await configured_graph(db, body.template, agents)
+    entity = Workflow(
+        project_id=str(pid),
+        **body.model_dump(exclude={"template", "orchestrator"}),
+        graph=graph.model_dump(mode="json"),
+    )
     await revalidate(db, entity)
     db.add(entity)
     await commit(db)
@@ -141,6 +155,24 @@ async def create_workflow(pid: UUID, body: WorkflowCreate, db: DB, user: Current
 @router.get("/workflows/{wid}", response_model=WorkflowOut)
 async def get_workflow(wid: UUID, db: DB, user: CurrentUser):
     return await authorized_workflow(db, wid, user)
+
+
+@router.put("/workflows/{wid}/orchestrator", response_model=WorkflowOut)
+async def save_orchestrator(wid: UUID, body: OrchestratorConfig, db: DB, user: CurrentUser):
+    from app.services.orchestrator import orchestrator_graph
+
+    entity = await authorized_workflow(db, wid, user, write=True)
+    if entity.status == "ARCHIVED" or not entity.graph.get("orchestrator"):
+        fail(409, "Chỉ chỉnh cấu hình Orchestrator đang hoạt động")
+    try:
+        graph = orchestrator_graph(body, await effective_agents(db, entity.project_id))
+    except ValueError as error:
+        fail(422, str(error))
+    entity.graph = graph.model_dump(mode="json")
+    entity.current_version += 1
+    await revalidate(db, entity)
+    await commit(db)
+    return entity
 
 
 @router.patch("/workflows/{wid}", response_model=WorkflowOut)
@@ -160,6 +192,8 @@ async def patch_workflow(wid: UUID, body: WorkflowPatch, db: DB, user: CurrentUs
 @router.put("/workflows/{wid}/graph", response_model=ValidationOut)
 async def save_graph(wid: UUID, body: Graph, db: DB, user: CurrentUser):
     entity = await authorized_workflow(db, wid, user, write=True)
+    if entity.graph.get("orchestrator") or body.orchestrator:
+        fail(409, "Sửa Orchestrator bằng màn hình cấu hình")
     if entity.status == "ARCHIVED":
         fail(409, "Workflow đã archived", "workflow_archived")
     errors = validate_graph(body, await effective_agents(db, entity.project_id))
@@ -231,14 +265,24 @@ async def unarchive(wid: UUID, db: DB, user: CurrentUser):
 
 
 @router.delete("/workflows/{wid}", response_model=Success)
-async def delete_workflow(wid: UUID, db: DB, user: CurrentUser):
+async def delete_workflow(wid: UUID, request: Request, db: DB, user: CurrentUser, cascade: bool = False):
+    from app.services.deletion import deleting_tickets
+
     entity = await authorized_workflow(db, wid, user, write=True)
-    if await has_tickets(db, entity.id):
-        fail(409, "Workflow đã có ticket; hãy archive", "workflow_in_use")
-    await protect_last_workflow(db, entity)
-    await db.delete(entity)
-    await commit(db)
+    ticket_ids = list((await db.scalars(select(Ticket.id).where(Ticket.workflow_id == entity.id))).all())
+    if ticket_ids and not cascade:
+        fail(409, "Cần xác nhận xóa kèm toàn bộ ticket trong workflow", "cascade_confirmation_required")
+    async with deleting_tickets(db, request, ticket_ids):
+        await db.delete(entity)
+        await commit(db)
     return {"ok": True}
+
+
+@router.get("/workflows/{wid}/deletion-preview", response_model=DeletionPreview)
+async def workflow_deletion_preview(wid: UUID, db: DB, user: CurrentUser):
+    entity = await authorized_workflow(db, wid, user, write=True)
+    count = await db.scalar(select(func.count()).select_from(Ticket).where(Ticket.workflow_id == entity.id))
+    return {"ticket_count": count, "workflow_count": 0}
 
 
 @router.get("/workflows/{wid}/versions", response_model=list[WorkflowVersionOut])

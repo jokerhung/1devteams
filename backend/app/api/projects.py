@@ -9,7 +9,7 @@ from sqlalchemy import delete, func, select
 from app.core.deps import DB, CurrentUser, fail, record, require_project
 from app.db.models import Agent, Project, ProjectMember, Team, Ticket, User, Workflow
 from app.schemas.agent import AgentOut
-from app.schemas.common import Page, Success
+from app.schemas.common import DeletionPreview, Page, Success
 from app.schemas.project import (
     MemberCreate,
     MemberOut,
@@ -248,33 +248,35 @@ async def patch_project(pid: UUID, body: ProjectPatch, request: Request, db: DB,
 
 
 @router.delete("/{pid}", response_model=Success)
-async def delete_project(pid: UUID, request: Request, db: DB, user: CurrentUser):
-    from app.services.assets import attachment_paths, remove_ticket_files
+async def delete_project(pid: UUID, request: Request, db: DB, user: CurrentUser, cascade: bool = False):
+    from app.services.deletion import deleting_tickets
 
     project = await require_project(db, str(pid), user, write=True)
     ticket_ids = list((await db.scalars(select(Ticket.id).where(Ticket.project_id == project.id))).all())
-    runner = request.app.state.ticket_runner
-    if any(tid in runner.tasks or tid in runner.adhoc_tasks for tid in ticket_ids):
-        fail(409, "Project đang có agent hoạt động")
-    paths = await attachment_paths(db, ticket_ids)
-    running = await db.scalar(
-        select(Ticket.id)
-        .where(
-            Ticket.project_id == project.id,
-            Ticket.status.in_(["RUNNING", "WAITING_USER_INPUT", "WAITING_USER_CONFIRM"]),
-        )
-        .limit(1)
+    workflow_count = await db.scalar(
+        select(func.count()).select_from(Workflow).where(Workflow.project_id == project.id)
     )
-    if running:
-        fail(409, "Hãy dừng ticket đang chạy trước khi xóa project", "project_in_use")
-    await db.execute(delete(Ticket).where(Ticket.project_id == project.id))
-    await db.execute(delete(Workflow).where(Workflow.project_id == project.id))
-    await db.delete(project)
-    await commit(db)
-    await remove_ticket_files(request.app.state.settings, ticket_ids, paths)
-    for tid in ticket_ids:
-        await runner.checkpointer.adelete_thread(tid)
+    if (ticket_ids or workflow_count) and not cascade:
+        fail(
+            409,
+            "Cần xác nhận xóa kèm toàn bộ workflow và ticket trong project",
+            "cascade_confirmation_required",
+        )
+    async with deleting_tickets(db, request, ticket_ids):
+        await db.execute(delete(Workflow).where(Workflow.project_id == project.id))
+        await db.delete(project)
+        await commit(db)
     return {"ok": True}
+
+
+@router.get("/{pid}/deletion-preview", response_model=DeletionPreview)
+async def project_deletion_preview(pid: UUID, db: DB, user: CurrentUser):
+    project = await require_project(db, str(pid), user, write=True)
+    tickets = await db.scalar(select(func.count()).select_from(Ticket).where(Ticket.project_id == project.id))
+    workflows = await db.scalar(
+        select(func.count()).select_from(Workflow).where(Workflow.project_id == project.id)
+    )
+    return {"ticket_count": tickets, "workflow_count": workflows}
 
 
 @router.get("/{pid}/members", response_model=MembersOut)

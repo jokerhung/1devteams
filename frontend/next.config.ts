@@ -22,7 +22,7 @@ export default function nextConfig(phase: string): NextConfig {
         },
       ];
     },
-    allowedDevOrigins: ["10.201.21.211", "100.113.158.66"],
+    allowedDevOrigins: ["localhost", "127.0.0.1", "10.201.21.211", "100.113.158.66"],
     // Each dev server and production build must own its manifests and cache.
     distDir:
       process.env.NEXT_DIST_DIR ||

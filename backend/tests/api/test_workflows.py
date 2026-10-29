@@ -54,10 +54,10 @@ async def test_archive_and_delete_rules(client):
     ).json()
     assert (await client.post(f"/api/workflows/{wid}/archive")).status_code == 200
     assert (await client.post(f"/api/workflows/{wid}/tickets", json={"title": "No"})).status_code == 400
-    assert (await client.delete(f"/api/workflows/{draft['id']}")).status_code == 409
-    assert (await client.post(f"/api/workflows/{wid}/unarchive")).status_code == 200
     assert (await client.delete(f"/api/workflows/{draft['id']}")).status_code == 200
-    assert (await client.delete(f"/api/projects/{pid}")).status_code == 200
+    assert (await client.post(f"/api/workflows/{wid}/unarchive")).status_code == 200
+    assert (await client.delete(f"/api/workflows/{draft['id']}")).status_code == 404
+    assert (await client.delete(f"/api/projects/{pid}?cascade=true")).status_code == 200
 
 
 async def test_cycle_and_inactive_agent_validation(client):

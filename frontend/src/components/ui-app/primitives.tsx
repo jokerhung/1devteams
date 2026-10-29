@@ -299,22 +299,30 @@ export function ConfirmDialog({
   children,
   onConfirm,
   onClose,
+  busyLabel = "Đang xử lý…",
 }: {
   title: string;
   children: React.ReactNode;
   onConfirm: () => Promise<void>;
   onClose: () => void;
+  busyLabel?: string;
 }) {
   const [busy, setBusy] = useState(false);
   return (
-    <Modal title={title} onClose={onClose}>
+    <Modal
+      title={title}
+      onClose={() => {
+        if (!busy) onClose();
+      }}
+    >
       <div className="text-sm">{children}</div>
       <div className="mt-6 flex justify-end gap-2">
-        <button className="btn btn-light" onClick={onClose}>
+        <button className="btn btn-light" disabled={busy} onClick={onClose}>
           Huỷ
         </button>
         <button
           disabled={busy}
+          aria-busy={busy}
           className="btn btn-dark"
           onClick={async () => {
             setBusy(true);
@@ -328,7 +336,14 @@ export function ConfirmDialog({
             }
           }}
         >
-          Xác nhận
+          {busy && (
+            <LoaderCircle
+              size={14}
+              className="animate-spin"
+              aria-hidden="true"
+            />
+          )}
+          {busy ? busyLabel : "Xác nhận"}
         </button>
       </div>
     </Modal>

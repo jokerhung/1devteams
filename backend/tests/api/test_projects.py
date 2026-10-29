@@ -49,7 +49,11 @@ async def test_recent_activity_and_pin(client):
 
 
 async def test_project_authorization(client):
-    entity = await project(client)
+    entity = await project(client, seeded=True)
+    wid = entity["workflow"]["id"]
+    tid = (
+        await client.post(f"/api/workflows/{wid}/tickets", json={"title": "Protected", "auto_start": False})
+    ).json()["ticket"]["id"]
     response = await client.post(
         "/api/users",
         json={"email": "viewer@example.com", "display_name": "Viewer", "password": "Password123!"},
@@ -74,3 +78,7 @@ async def test_project_authorization(client):
             await viewer.patch(f"/api/projects/{entity['id']}", json={"name": "Hacked"})
         ).status_code == 403
         assert (await viewer.post(f"/api/projects/{entity['id']}/seed-default")).status_code == 403
+        for scope, identifier in [("projects", entity["id"]), ("workflows", wid), ("tickets", tid)]:
+            assert (await viewer.delete(f"/api/{scope}/{identifier}?cascade=true")).status_code == 403
+            if scope != "tickets":
+                assert (await viewer.get(f"/api/{scope}/{identifier}/deletion-preview")).status_code == 403

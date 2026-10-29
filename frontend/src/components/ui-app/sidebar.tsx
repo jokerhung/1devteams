@@ -178,7 +178,7 @@ function ProjectItem({
       >
         <Link
           href={`/projects/${project.id}`}
-          className="side-item flex-1"
+          className="side-item min-w-0 flex-1"
           onClick={() => {
             setOpen(true);
             onNavigate();
@@ -193,6 +193,24 @@ function ProjectItem({
             />
           )}
         </Link>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            id={`sidebar-project-create-${project.id}`}
+            aria-label={`Thêm workflow hoặc Orchestrator cho ${project.name}`}
+            title="Thêm workflow hoặc Orchestrator"
+            className="shrink-0 rounded p-2 text-stone-500 hover:bg-[#DFDDD0] focus-visible:ring-2 focus-visible:ring-stone-400"
+          >
+            <Plus size={13} aria-hidden="true" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="bottom" align="end" className="min-w-44">
+            <DropdownMenuItem render={<Link href={`/projects/${project.id}/workflows/new`} onClick={onNavigate} />}>
+              Workflow
+            </DropdownMenuItem>
+            <DropdownMenuItem render={<Link href={`/projects/${project.id}/orchestrators/new`} onClick={onNavigate} />}>
+              Orchestrator
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <button
           aria-label={`${open ? "Thu gọn" : "Mở"} project ${project.name}`}
           aria-expanded={open}
@@ -216,15 +234,6 @@ function ProjectItem({
               Chưa có workflow.
             </p>
           )}
-          <Link
-            className="side-item !py-1 text-[11px] text-stone-500"
-            href={`/projects/${project.id}/workflows/new`}
-          >
-            <Plus size={12} />
-            {tree.data?.workflows.length === 0
-              ? "Tạo workflow đầu tiên"
-              : "Thêm workflow"}
-          </Link>
         </div>
       )}
     </div>
@@ -521,6 +530,7 @@ export function Sidebar() {
         )}
         <DropdownMenu>
           <DropdownMenuTrigger
+            id="sidebar-account-menu"
             type="button"
             aria-label={`Menu tài khoản ${me.data?.display_name || ""}`}
             disabled={!me.data || loggingOut}

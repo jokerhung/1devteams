@@ -11,6 +11,7 @@ import {
   StatusBadge,
 } from "@/components/ui-app/primitives";
 import { mainPath } from "./PipelineView";
+import { DeleteEntityButton } from "@/components/ui-app/delete-entity-button";
 export function WorkflowCard({
   workflow: w,
   agents,
@@ -21,9 +22,7 @@ export function WorkflowCard({
   onTicket: () => void;
 }) {
   const client = useQueryClient();
-  const [action, setAction] = useState<
-      "archive" | "unarchive" | "delete" | null
-    >(null),
+  const [action, setAction] = useState<"archive" | "unarchive" | null>(null),
     [edit, setEdit] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -41,6 +40,7 @@ export function WorkflowCard({
           {w.name}
         </Link>
         <span className="badge font-mono">{w.ticket_prefix}</span>
+        {w.graph.orchestrator && <span className="badge">Orchestrator</span>}
         <span className="badge ml-auto">
           {w.status === "PUBLISHED"
             ? `Đã xuất bản v${w.published_version}`
@@ -48,6 +48,7 @@ export function WorkflowCard({
               ? "Nháp"
               : "Lưu trữ"}
         </span>
+        <DeleteEntityButton kind="workflow" id={w.id} name={w.name} />
         <details className="relative">
           <summary
             aria-label={`Thao tác ${w.name}`}
@@ -75,12 +76,6 @@ export function WorkflowCard({
               }
             >
               {w.status === "ARCHIVED" ? "Khôi phục" : "Lưu trữ"}
-            </button>
-            <button
-              className="side-item w-full text-xs text-red-700"
-              onClick={() => setAction("delete")}
-            >
-              Xoá workflow
             </button>
           </div>
         </details>
@@ -119,7 +114,11 @@ export function WorkflowCard({
           Tạo ticket
         </button>
         <Link className="btn btn-light" href={`${base}/edit`}>
-          {w.status === "ARCHIVED" ? "Xem luồng" : "Sửa luồng"}
+          {w.graph.orchestrator
+            ? "Cấu hình"
+            : w.status === "ARCHIVED"
+              ? "Xem luồng"
+              : "Sửa luồng"}
         </Link>
         <Link className="btn btn-light" href={base}>
           Chi tiết
@@ -127,14 +126,10 @@ export function WorkflowCard({
       </div>
       {action && (
         <ConfirmDialog
-          title={`${action === "archive" ? "Lưu trữ" : action === "unarchive" ? "Khôi phục" : "Xoá"} workflow`}
+          title={`${action === "archive" ? "Lưu trữ" : "Khôi phục"} workflow`}
           onClose={() => setAction(null)}
           onConfirm={async () => {
-            await send(
-              `/workflows/${w.id}${action === "delete" ? "" : `/${action}`}`,
-              undefined,
-              action === "delete" ? "DELETE" : "POST",
-            );
+            await send(`/workflows/${w.id}/${action}`, undefined, "POST");
             await invalidate();
             setAction(null);
             toast.success("Đã cập nhật workflow");

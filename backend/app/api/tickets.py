@@ -495,22 +495,12 @@ async def stash_ticket(tid: UUID, request: Request, db: DB, user: CurrentUser):
 
 @router.delete("/tickets/{tid}")
 async def delete_ticket(tid: UUID, request: Request, db: DB, user: CurrentUser):
-    from app.services.assets import attachment_paths, remove_ticket_files
+    from app.services.deletion import deleting_tickets
 
     ticket = await authorized_ticket(db, tid, user)
     await require_project(db, ticket.project_id, user, write=True)
-    runner = request.app.state.ticket_runner
-    if (
-        ticket.status not in {"CANCELLED", "COMPLETED"}
-        or str(tid) in runner.tasks
-        or str(tid) in runner.adhoc_tasks
-    ):
-        fail(409, "Chỉ xoá ticket đã kết thúc")
-    paths = await attachment_paths(db, [str(tid)])
-    await db.delete(ticket)
-    await commit(db)
-    await remove_ticket_files(request.app.state.settings, [str(tid)], paths)
-    await runner.checkpointer.adelete_thread(str(tid))
+    async with deleting_tickets(db, request, [str(tid)]):
+        await commit(db)
     return {"ok": True}
 
 

@@ -36,6 +36,11 @@ class Success(BaseModel):
     ok: bool = True
 
 
+class DeletionPreview(BaseModel):
+    ticket_count: int = 0
+    workflow_count: int = 0
+
+
 class PreferenceInput(Input):
     key: str = Field(min_length=1, max_length=60)
     value: Any

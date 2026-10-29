@@ -17,6 +17,10 @@ def reachable(start: str, links: dict[str, list[str]], skip: set[str] | None = N
 
 
 def validate_graph(graph: Graph, agents: list[Agent]) -> list[str]:
+    if graph.orchestrator:
+        from app.services.orchestrator import validate_orchestrator
+
+        return validate_orchestrator(graph, agents)
     errors = []
     nodes = {node.id: node for node in graph.nodes}
     if len(nodes) != len(graph.nodes):

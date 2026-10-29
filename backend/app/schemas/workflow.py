@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from app.schemas.common import Input, Name, Record
 
@@ -24,10 +24,24 @@ class Edge(Input):
     targetHandle: str | None = None
 
 
+class OrchestratorConfig(Input):
+    coordinator_agent_id: UUID
+    instructions: str = Field(min_length=1, max_length=20000)
+    max_rounds: int = Field(default=20, ge=1, le=40)
+
+    @field_validator("instructions")
+    @classmethod
+    def nonempty_instructions(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Nhập instruction cho Orchestrator")
+        return value.strip()
+
+
 class Graph(Input):
     nodes: list[Node] = Field(default_factory=list, max_length=300)
     edges: list[Edge] = Field(default_factory=list, max_length=1500)
     viewport: dict[str, float] = Field(default_factory=lambda: {"x": 0.0, "y": 0.0, "zoom": 1.0})
+    orchestrator: OrchestratorConfig | None = None
 
 
 class WorkflowCreate(Input):
@@ -37,6 +51,7 @@ class WorkflowCreate(Input):
     template: Literal["blank", "bugfix_default", "bugfix_with_security_review", "add_feature"] = "blank"
     icon: str = Field(default="🐛", max_length=8)
     color: str = Field(default="sky", max_length=20)
+    orchestrator: OrchestratorConfig | None = None
 
 
 class WorkflowPatch(Input):

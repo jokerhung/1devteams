@@ -1,7 +1,9 @@
 "use client";
 import { useState } from "react";
 import dynamic from "next/dynamic";
-const RemoteTerminal = dynamic(() => import("./RemoteTerminal"), { ssr: false });
+const RemoteTerminal = dynamic(() => import("./RemoteTerminal"), {
+  ssr: false,
+});
 import type { Agent } from "@/lib/types";
 import { Modal } from "@/components/ui-app/primitives";
 import { WorkflowReadonlyGraph } from "@/components/workflow/WorkflowReadonlyGraph";
@@ -45,11 +47,32 @@ export function RightDrawer({
       </div>
       {tab === "progress" ? (
         <>
-          <WorkflowReadonlyGraph
-            graph={graph}
-            agents={agents}
-            nodeStatuses={statuses}
-          />
+          {graph.orchestrator ? (
+            <section className="mb-4 rounded-xl border p-4 text-sm">
+              <h2 className="font-semibold">Orchestrator</h2>
+              <p className="my-2 whitespace-pre-wrap">
+                {graph.orchestrator.instructions}
+              </p>
+              <ul>
+                {graph.nodes
+                  ?.filter((n) => n.type === "agent")
+                  .map((n) => (
+                    <li key={n.id}>
+                      {n.id === "coordinator" ? "Điều phối: " : "Agent: "}
+                      {agents.find((a) => a.id === n.data?.agent_id)?.handle ||
+                        String(n.data?.label || n.id)}
+                      {statuses[n.id] && ` · ${statuses[n.id]}`}
+                    </li>
+                  ))}
+              </ul>
+            </section>
+          ) : (
+            <WorkflowReadonlyGraph
+              graph={graph}
+              agents={agents}
+              nodeStatuses={statuses}
+            />
+          )}
           <ol className="max-h-48 overflow-auto text-xs">
             {groups
               .filter((g) => g.type === "turn")

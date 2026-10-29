@@ -30,6 +30,10 @@ def compile_workflow(graph: Graph, agents: dict[str, AgentRuntimeConfig], checkp
             evaluate(str(node.data.get("expression", "")), {})
     if errors:
         raise ValueError("; ".join(errors))
+    if graph.orchestrator:
+        from app.engine.orchestrator import compile_orchestrator
+
+        return compile_orchestrator(graph, agents, checkpointer)
     sg = StateGraph(WorkflowState)
     for node in graph.nodes:
         sg.add_node(node.id, make_node(node, agents))

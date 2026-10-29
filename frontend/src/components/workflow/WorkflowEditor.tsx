@@ -26,6 +26,7 @@ import { NodeInspector } from "./NodeInspector";
 import { ValidationPanel } from "./ValidationPanel";
 import { PipelineView } from "./PipelineView";
 import { WorkflowAssistantPanel } from "./WorkflowAssistantPanel";
+import { OrchestratorForm } from "./OrchestratorForm";
 type ValidationResult = {
   is_valid: boolean;
   errors: string[];
@@ -58,6 +59,8 @@ export function WorkflowEditor({ pid, wid }: { pid: string; wid: string }) {
     );
   if (workflow.data.project_id !== pid)
     return <ErrorState error={new Error("Workflow không thuộc project này")} />;
+  if (workflow.data.graph.orchestrator)
+    return <OrchestratorForm pid={pid} workflow={workflow.data} />;
   return (
     <ReactFlowProvider>
       <Editor
