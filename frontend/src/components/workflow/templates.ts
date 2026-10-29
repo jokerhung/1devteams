@@ -9,7 +9,8 @@ export const templateOptions = [
   { id: "add_feature", name: "Add feature" },
   { id: "bugfix_with_security_review", name: "Fix Bug + Security Review" },
 ] as const;
-export type TemplateId = (typeof templateOptions)[number]["id"];
+export type TemplateId =
+  (typeof templateOptions)[number]["id"] | `wf_${string}`;
 export function roleAgent(agents: Agent[], role: string) {
   return agents.find(
     (a) =>
@@ -19,6 +20,7 @@ export function roleAgent(agents: Agent[], role: string) {
   );
 }
 export function missingRoles(template: TemplateId, agents: Agent[]) {
+  if (template.startsWith("wf_")) return [];
   return (
     template === "blank"
       ? []
@@ -49,9 +51,9 @@ export function templateGraph(
   template: TemplateId,
   agents: Agent[],
 ): WorkflowGraph {
-  if (template === "add_feature") {
+  if (template === "add_feature" || template.startsWith("wf_")) {
     throw new Error(
-      "Add feature cần tải định nghĩa từ API bằng loadTemplateGraph",
+      "Template này cần tải định nghĩa từ API bằng loadTemplateGraph",
     );
   }
   const specs: [string, NodeKind, Record<string, unknown>][] =

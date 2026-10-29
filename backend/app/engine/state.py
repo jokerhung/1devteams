@@ -34,3 +34,5 @@ class WorkflowState(TypedDict, total=False):
     node_statuses: dict[str, str]
     orchestrator_task: str
     orchestrator_summary: str
+    orchestrator_question: str
+    orchestrator_resume: str

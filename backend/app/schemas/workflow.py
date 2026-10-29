@@ -7,6 +7,7 @@ from pydantic import Field, field_validator
 from app.schemas.common import Input, Name, Record
 
 Prefix = str
+TEMPLATE_KEY_PATTERN = r"^(blank|bugfix_default|bugfix_with_security_review|add_feature|wf_[a-f0-9]{32})$"
 
 
 class Node(Input):
@@ -24,10 +25,22 @@ class Edge(Input):
     targetHandle: str | None = None
 
 
+class OrchestratorWorkerSettings(Input):
+    instructions: str = Field(default="", max_length=20000)
+    document_name: str | None = Field(
+        default=None, max_length=100, pattern=r"^[a-zA-Z0-9_-][a-zA-Z0-9_.-]*\.md$"
+    )
+
+
+class OrchestratorWorker(OrchestratorWorkerSettings):
+    agent_id: UUID
+
+
 class OrchestratorConfig(Input):
     coordinator_agent_id: UUID
     instructions: str = Field(min_length=1, max_length=20000)
     max_rounds: int = Field(default=20, ge=1, le=40)
+    workers: list[OrchestratorWorker] | None = Field(default=None, min_length=1, max_length=30)
 
     @field_validator("instructions")
     @classmethod
@@ -48,7 +61,7 @@ class WorkflowCreate(Input):
     name: Name
     ticket_prefix: str = Field(pattern=r"^[A-Z]{2,10}$")
     description: str = ""
-    template: Literal["blank", "bugfix_default", "bugfix_with_security_review", "add_feature"] = "blank"
+    template: str = Field(default="blank", pattern=TEMPLATE_KEY_PATTERN, max_length=60)
     icon: str = Field(default="🐛", max_length=8)
     color: str = Field(default="sky", max_length=20)
     orchestrator: OrchestratorConfig | None = None
@@ -61,6 +74,12 @@ class WorkflowPatch(Input):
     icon: str | None = Field(default=None, max_length=8)
     color: str | None = Field(default=None, max_length=20)
     position: int | None = Field(default=None, ge=0)
+
+
+class WorkflowTemplateCreate(Input):
+    name: Name
+    description: str = Field(default="", max_length=2000)
+    source_template: str = Field(default="blank", pattern=TEMPLATE_KEY_PATTERN, max_length=60)
 
 
 class WorkflowDuplicate(Input):

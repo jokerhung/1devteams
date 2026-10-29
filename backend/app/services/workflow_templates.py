@@ -7,6 +7,31 @@ from sqlalchemy import select
 from app.db.models import Agent, WorkflowTemplate
 from app.schemas.workflow import Graph
 
+BUILTIN_TEMPLATES = {
+    "blank": "Trống",
+    "bugfix_default": "Fix Bug",
+    "add_feature": "Add feature",
+    "bugfix_with_security_review": "Fix Bug + Security Review",
+}
+CUSTOM_TEMPLATE_PREFIX = "wf_"
+
+
+def portable_graph(graph: Graph, agents: list[Agent]) -> Graph:
+    from app.services.workflow_validator import validate_graph
+
+    if graph.orchestrator:
+        raise ValueError("Dùng template Orchestrator cho luồng điều phối")
+    errors = validate_graph(graph, agents)
+    if errors:
+        raise ValueError("; ".join(errors))
+    by_id = {agent.id: agent for agent in agents}
+    for node in graph.nodes:
+        if node.type in {"agent", "git_release"}:
+            agent = by_id[str(node.data["agent_id"])]
+            node.data.update(agent_role=agent.role_key, agent_handle=agent.handle)
+    return graph
+
+
 FEATURE_STEPS = [
     (
         "leader",
@@ -174,11 +199,15 @@ def feature_graph(agents: list[Agent]) -> Graph:
 async def configured_graph(db, name: str, agents: list[Agent]) -> Graph:
     from app.services.seed import template_graph
 
-    graph = template_graph(name, agents)
     config = await db.scalar(select(WorkflowTemplate).where(WorkflowTemplate.key == name))
+    if name not in BUILTIN_TEMPLATES and not (name.startswith(CUSTOM_TEMPLATE_PREFIX) and config):
+        raise ValueError("Không tìm thấy template Workflow")
+    graph = template_graph(name if name in BUILTIN_TEMPLATES else "blank", agents)
     if config:
         if config.graph:
-            graph = Graph.model_validate(config.graph)
+            graph = Graph.model_validate(
+                config.graph["definition"] if name.startswith(CUSTOM_TEMPLATE_PREFIX) else config.graph
+            )
             roles = {agent.role_key: agent.id for agent in agents if agent.is_active}
             handles = {agent.handle: agent.id for agent in agents if agent.is_active}
             for node in graph.nodes:

@@ -1,5 +1,7 @@
 "use client";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/api";
 import type { Workflow, Project } from "@/lib/types";
 import { templateOptions, type TemplateId } from "./templates";
 export function WorkflowToolbar({
@@ -41,6 +43,13 @@ export function WorkflowToolbar({
   onTemplate: (template: TemplateId) => void;
   onView: (view: "canvas" | "pipeline") => void;
 }) {
+  const templates = useQuery({
+    queryKey: ["workflow-templates", project.id],
+    queryFn: () =>
+      apiFetch<{ id: string; name: string }[]>(
+        `/workflow-templates?project_id=${project.id}`,
+      ),
+  });
   return (
     <header className="space-y-3 border-b border-stone-200 bg-white p-3">
       <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -89,7 +98,7 @@ export function WorkflowToolbar({
           <option value="" disabled>
             Mẫu workflow…
           </option>
-          {templateOptions.map((t) => (
+          {(templates.data || templateOptions).map((t) => (
             <option value={t.id} key={t.id}>
               {t.name}
             </option>

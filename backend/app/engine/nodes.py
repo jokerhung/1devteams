@@ -695,7 +695,7 @@ def make_node(node: Node, agents: dict[str, AgentRuntimeConfig]) -> Callable[...
         iterations[nid] = count
         clean, files, cfg, route, cursors = await agent_turn(node, state, ctx)
         document = node.data.get("document_name")
-        if document and route != "need_info":
+        if document and route != "need_info" and not clean.lstrip().startswith("@@ASK_USER:"):
             import re
 
             if not isinstance(document, str) or not re.fullmatch(r"[a-zA-Z0-9_-]+\.md", document):

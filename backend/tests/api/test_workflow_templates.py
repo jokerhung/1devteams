@@ -1,64 +1,93 @@
+import httpx
+
 from tests.api.conftest import project
 
 
-async def test_template_instructions_persist_for_new_workflows_only(client):
-    entity = await project(client, seeded=True)
-    pid = entity["id"]
-
-    async def create(name, prefix):
-        response = await client.post(
-            f"/api/projects/{pid}/workflows",
-            json={"name": name, "ticket_prefix": prefix, "template": "add_feature"},
-        )
-        assert response.status_code == 201, response.text
-        workflow = response.json()
-        assert workflow["is_valid"], workflow["validation_errors"]
-        return workflow
-
-    original = await create("Feature original", "FEAT")
-    saved = await client.put(
-        "/api/workflow-templates/add_feature",
-        json={"instructions": {"n_ba": "Write acceptance criteria and business rules"}},
+async def test_create_blank_template_and_use_in_project(client):
+    response = await client.post(
+        "/api/workflow-templates", json={"name": "  New process  ", "description": "Our own workflow"}
     )
-    assert saved.status_code == 200, saved.text
-    templates = (await client.get(f"/api/workflow-templates?project_id={pid}")).json()
-    graph = next(t["graph"] for t in templates if t["id"] == "add_feature")
-    assert next(n for n in graph["nodes"] if n["id"] == "n_ba")["data"]["instructions"].startswith(
-        "Write acceptance"
-    )
-    updated = await create("Feature updated", "NEWFEAT")
-    old = (await client.get(f"/api/workflows/{original['id']}")).json()
-    old_ba = next(n for n in old["graph"]["nodes"] if n["id"] == "n_ba")
-    new_ba = next(n for n in updated["graph"]["nodes"] if n["id"] == "n_ba")
-    assert old_ba["data"]["instructions"] != new_ba["data"]["instructions"]
-    assert len([n for n in graph["nodes"] if n["type"] in {"agent", "git_release"}]) == 8
+    assert response.status_code == 201, response.text
+    template = response.json()
+    assert template["id"].startswith("wf_") and template["name"] == "New process"
+    assert not template["builtin"]
+    assert [n["type"] for n in template["graph"]["nodes"]] == ["start", "end"]
+    catalog = (await client.get("/api/workflow-templates")).json()
     assert (
-        await client.put("/api/workflow-templates/add_feature", json={"instructions": {"g_confirm": "skip"}})
-    ).status_code == 422
-    assert (await client.put("/api/workflow-templates/missing", json={"instructions": {}})).status_code == 404
-
-
-async def test_canvas_template_graph_persists_and_rebinds_agents(client):
-    entity = await project(client, seeded=True)
-    templates = (await client.get("/api/workflow-templates")).json()
-    graph = next(t["graph"] for t in templates if t["id"] == "add_feature")
-    ba = next(n for n in graph["nodes"] if n["id"] == "n_ba")
-    ba["data"]["instructions"] = "Canvas edited requirements"
-    ba["position"] = {"x": 250, "y": 650}
-    saved = await client.put("/api/workflow-templates/add_feature", json={"graph": graph})
-    assert saved.status_code == 200, saved.text
-    templates = (await client.get("/api/workflow-templates")).json()
-    restored = next(t["graph"] for t in templates if t["id"] == "add_feature")
-    restored_ba = next(n for n in restored["nodes"] if n["id"] == "n_ba")
-    assert restored_ba["position"] == ba["position"]
-    assert restored_ba["data"]["instructions"] == "Canvas edited requirements"
-    assert restored_ba["data"]["agent_role"] == "BA"
+        len(catalog) == 5
+        and next(t for t in catalog if t["id"] == template["id"])["description"] == "Our own workflow"
+    )
+    entity = await project(client)
     created = await client.post(
         f"/api/projects/{entity['id']}/workflows",
-        json={"name": "Canvas template", "ticket_prefix": "FEAT", "template": "add_feature"},
+        json={"name": "From custom", "ticket_prefix": "CUSTOM", "template": template["id"]},
     )
     assert created.status_code == 201, created.text
-    assert created.json()["is_valid"]
-    assert next(n for n in created.json()["graph"]["nodes"] if n["id"] == "n_ba") == restored_ba
-    graph["edges"].append({"id": "unsafe", "source": "start", "target": "n_devops"})
-    assert (await client.put("/api/workflow-templates/add_feature", json={"graph": graph})).status_code == 422
+    assert created.json()["graph"] == template["graph"]
+
+
+async def test_clone_edit_and_bind_custom_template_without_changing_source_or_snapshots(client):
+    entity = await project(client, seeded=True)
+    original = next(
+        t for t in (await client.get("/api/workflow-templates")).json() if t["id"] == "bugfix_default"
+    )
+    template = (
+        await client.post(
+            "/api/workflow-templates", json={"name": "Custom bugfix", "source_template": "bugfix_default"}
+        )
+    ).json()
+    key = template["id"]
+    created = await client.post(
+        f"/api/projects/{entity['id']}/workflows",
+        json={"name": "Snapshot", "ticket_prefix": "COPY", "template": key},
+    )
+    assert created.status_code == 201, created.text
+    saved_workflow = created.json()
+    graph = template["graph"]
+    node = next(n for n in graph["nodes"] if n["id"] == "n_ba")
+    assert node["data"]["agent_role"] == "BA" and node["data"]["agent_handle"] == "@ba"
+    node["data"]["instructions"] = "Custom instruction"
+    response = await client.put(f"/api/workflow-templates/{key}", json={"graph": graph})
+    assert response.status_code == 200, response.text
+    catalog = (await client.get("/api/workflow-templates")).json()
+    assert next(t for t in catalog if t["id"] == "bugfix_default") == original
+    assert next(t for t in catalog if t["id"] == key)["name"] == "Custom bugfix"
+    unchanged = (await client.get(f"/api/workflows/{saved_workflow['id']}")).json()
+    assert unchanged["graph"] == saved_workflow["graph"]
+    empty = await project(client, "Empty")
+    scoped = next(
+        t
+        for t in (await client.get(f"/api/workflow-templates?project_id={empty['id']}")).json()
+        if t["id"] == key
+    )
+    assert all(not n["data"].get("agent_id") for n in scoped["graph"]["nodes"] if n["type"] == "agent")
+    copied = await client.post(
+        "/api/workflow-templates", json={"name": "Copy of custom", "source_template": key}
+    )
+    assert copied.status_code == 201, copied.text
+    assert (
+        next(n for n in copied.json()["graph"]["nodes"] if n["id"] == "n_ba")["data"]["instructions"]
+        == "Custom instruction"
+    )
+
+
+async def test_template_creation_validation_and_member_permissions(client):
+    for body in [
+        {"name": "   "},
+        {"name": "X", "source_template": "invalid"},
+        {"name": "X", "source_template": "wf_" + "0" * 32},
+    ]:
+        assert (await client.post("/api/workflow-templates", json=body)).status_code == 422
+    await client.post(
+        "/api/users",
+        json={"email": "member@example.com", "display_name": "Member", "password": "Password123!"},
+    )
+    token = (
+        await client.post("/api/auth/login", json={"email": "member@example.com", "password": "Password123!"})
+    ).json()["access_token"]
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=client.app),
+        base_url="http://test",
+        headers={"Authorization": "Bearer " + token},
+    ) as member:
+        assert (await member.post("/api/workflow-templates", json={"name": "No"})).status_code == 403

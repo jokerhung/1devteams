@@ -1,4 +1,4 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
@@ -15,14 +15,19 @@ from app.schemas.workflow import (
     WorkflowDuplicate,
     WorkflowOut,
     WorkflowPatch,
+    WorkflowTemplateCreate,
     WorkflowVersionOut,
 )
 from app.services.common import commit, fields, patch_values
 from app.services.project_service import effective_agents
-from app.services.seed import template_graph
 from app.services.workflow_assistant import AssistantRequest, AssistantResponse, chat
 from app.services.workflow_service import has_tickets, protect_last_workflow, publish, revalidate
-from app.services.workflow_templates import configured_graph
+from app.services.workflow_templates import (
+    BUILTIN_TEMPLATES,
+    CUSTOM_TEMPLATE_PREFIX,
+    configured_graph,
+    portable_graph,
+)
 from app.services.workflow_validator import validate_graph
 
 router = APIRouter(tags=["Workflows"])
@@ -46,7 +51,12 @@ async def workflow_assistant(wid: UUID, body: AssistantRequest, db: DB, user: Cu
 
 @router.post("/workflow-templates/{key}/assistant", response_model=AssistantResponse)
 async def template_assistant(key: str, body: AssistantRequest, db: DB, user: Admin, request: Request):
-    if key not in {"bugfix_default", "add_feature", "bugfix_with_security_review"}:
+    custom = (
+        await db.scalar(select(WorkflowTemplate).where(WorkflowTemplate.key == key))
+        if key.startswith(CUSTOM_TEMPLATE_PREFIX)
+        else None
+    )
+    if key not in set(BUILTIN_TEMPLATES) - {"blank"} and custom is None:
         fail(404, "Không tìm thấy template")
     agents = list((await db.scalars(select(Agent))).all())
     return await chat(body, agents, db, request)
@@ -59,15 +69,58 @@ async def templates(db: DB, user: CurrentUser, project_id: UUID | None = None) -
         agents = await effective_agents(db, str(project_id))
     else:
         agents = list((await db.scalars(select(Agent))).all())
-    return [
-        {"id": key, "name": name, "graph": (await configured_graph(db, key, agents)).model_dump()}
-        for key, name in [
-            ("blank", "Trống"),
-            ("bugfix_default", "Fix Bug"),
-            ("add_feature", "Add feature"),
-            ("bugfix_with_security_review", "Fix Bug + Security Review"),
-        ]
+    entries = [
+        {"id": key, "name": name, "description": "", "builtin": True}
+        for key, name in BUILTIN_TEMPLATES.items()
     ]
+    custom = (
+        await db.scalars(
+            select(WorkflowTemplate)
+            .where(WorkflowTemplate.key.startswith(CUSTOM_TEMPLATE_PREFIX, autoescape=True))
+            .order_by(WorkflowTemplate.created_at)
+        )
+    ).all()
+    entries.extend(
+        {
+            "id": row.key,
+            "name": row.graph["name"],
+            "description": row.graph.get("description", ""),
+            "builtin": False,
+        }
+        for row in custom
+    )
+    return [
+        {**entry, "graph": (await configured_graph(db, entry["id"], agents)).model_dump(mode="json")}
+        for entry in entries
+    ]
+
+
+@router.post("/workflow-templates", status_code=201)
+async def create_template(body: WorkflowTemplateCreate, db: DB, user: Admin):
+    agents = list((await db.scalars(select(Agent))).all())
+    try:
+        graph = portable_graph(await configured_graph(db, body.source_template, agents), agents)
+    except ValueError as error:
+        fail(422, str(error))
+    key = CUSTOM_TEMPLATE_PREFIX + uuid4().hex
+    db.add(
+        WorkflowTemplate(
+            key=key,
+            graph={
+                "name": body.name,
+                "description": body.description,
+                "definition": graph.model_dump(mode="json"),
+            },
+        )
+    )
+    await commit(db)
+    return {
+        "id": key,
+        "name": body.name,
+        "description": body.description,
+        "builtin": False,
+        "graph": graph.model_dump(mode="json"),
+    }
 
 
 class TemplateInstructions(BaseModel):
@@ -77,30 +130,30 @@ class TemplateInstructions(BaseModel):
 
 @router.put("/workflow-templates/{key}")
 async def save_template(key: str, body: TemplateInstructions, db: DB, user: Admin):
-    if key not in {"bugfix_default", "add_feature", "bugfix_with_security_review"}:
+    config = await db.scalar(select(WorkflowTemplate).where(WorkflowTemplate.key == key))
+    custom = key.startswith(CUSTOM_TEMPLATE_PREFIX) and config is not None
+    if key not in set(BUILTIN_TEMPLATES) - {"blank"} and not custom:
         fail(404, "Không tìm thấy template")
     agents = list((await db.scalars(select(Agent))).all())
-    graph = body.graph or template_graph(key, [])
+    graph = body.graph or await configured_graph(db, key, agents)
     if body.graph:
-        errors = validate_graph(graph, agents)
-        if errors:
-            fail(422, "; ".join(errors))
-        roles = {agent.id: agent.role_key for agent in agents}
-        handles = {agent.id: agent.handle for agent in agents}
-        for node in graph.nodes:
-            if node.type in {"agent", "git_release"}:
-                node.data["agent_role"] = roles.get(str(node.data.get("agent_id", "")))
-                node.data["agent_handle"] = handles.get(str(node.data.get("agent_id", "")))
+        try:
+            graph = portable_graph(graph, agents)
+        except ValueError as error:
+            fail(422, str(error))
     permitted = {node.id for node in graph.nodes if node.type in {"agent", "git_release"}}
     if set(body.instructions) - permitted or any(len(text) > 20000 for text in body.instructions.values()):
         fail(422, "Hướng dẫn template không hợp lệ")
-    config = await db.scalar(select(WorkflowTemplate).where(WorkflowTemplate.key == key))
     if config is None:
         config = WorkflowTemplate(key=key)
         db.add(config)
     config.instructions = body.instructions
     if body.graph:
-        config.graph = graph.model_dump()
+        config.graph = (
+            {**config.graph, "definition": graph.model_dump(mode="json")}
+            if custom
+            else graph.model_dump(mode="json")
+        )
     await commit(db)
     return {"ok": True}
 
@@ -140,7 +193,10 @@ async def create_workflow(pid: UUID, body: WorkflowCreate, db: DB, user: Current
         except ValueError as error:
             fail(422, str(error))
     else:
-        graph = await configured_graph(db, body.template, agents)
+        try:
+            graph = await configured_graph(db, body.template, agents)
+        except ValueError as error:
+            fail(422, str(error))
     entity = Workflow(
         project_id=str(pid),
         **body.model_dump(exclude={"template", "orchestrator"}),

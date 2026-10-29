@@ -9,6 +9,17 @@ def orchestrator_graph(config: OrchestratorConfig, agents) -> Graph:
     if coordinator is None:
         raise ValueError("Agent điều phối phải đang hoạt động và thuộc project")
     workers = [agent for agent in active if agent.id != coordinator.id]
+    worker_settings = {}
+    if config.workers is not None:
+        worker_settings = {str(worker.agent_id): worker for worker in config.workers}
+        available = {agent.id: agent for agent in workers}
+        if len(worker_settings) != len(config.workers) or any(
+            aid not in available for aid in worker_settings
+        ):
+            raise ValueError(
+                "Agent thực hiện phải khác nhau, đang hoạt động, thuộc project và khác agent điều phối"
+            )
+        workers = [available[aid] for aid in worker_settings]
     if not workers:
         raise ValueError("Project cần ít nhất một agent thực hiện ngoài agent điều phối")
     nodes = [Node(id="start", type="start"), Node(id="end", type="end")]
@@ -38,7 +49,12 @@ def orchestrator_graph(config: OrchestratorConfig, agents) -> Graph:
                     "agent_id": agent.id,
                     "label": agent.display_name,
                     "agent_handle": agent.handle,
-                    "instructions": "Làm nhiệm vụ từ điều phối; báo cáo kết quả, bằng chứng, lỗi.",
+                    "instructions": worker_settings[agent.id].instructions
+                    if agent.id in worker_settings
+                    else "Làm nhiệm vụ từ điều phối; báo cáo kết quả, bằng chứng, lỗi.",
+                    "document_name": worker_settings[agent.id].document_name
+                    if agent.id in worker_settings
+                    else None,
                     "max_iterations": config.max_rounds,
                 },
             )
@@ -69,6 +85,10 @@ def validate_orchestrator(graph: Graph, agents) -> list[str]:
     if not workers or len(graph.nodes) != len(workers) + 3:
         errors.append("Orchestrator cần agent thực hiện")
     participants = coordinator + workers
+    if config.workers is not None and {str(worker.agent_id) for worker in config.workers} != {
+        str(node.data.get("agent_id")) for node in workers
+    }:
+        errors.append("Danh sách agent thực hiện không khớp cấu hình Orchestrator")
     if len({str(node.data.get("agent_id")) for node in participants}) != len(participants):
         errors.append("Agent điều phối và agent thực hiện phải khác nhau")
     for node in participants:

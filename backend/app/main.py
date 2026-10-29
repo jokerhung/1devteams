@@ -26,6 +26,7 @@ from app.api import (  # noqa: E402
     auth,
     notifications,
     operations,
+    orchestrator_templates,
     preferences,
     projects,
     realtime,
@@ -163,6 +164,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         preferences.router,
         assets.router,
         operations.router,
+        orchestrator_templates.router,
         workspace_settings.router,
     ]:
         app.include_router(router, prefix="/api")

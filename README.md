@@ -146,10 +146,18 @@ Linux/macOS; không xem bảng trên là chứng nhận tương thích mọi c�
    Playwright; thông báo trong ứng dụng, toast và browser notification khi
    trình duyệt hỗ trợ và người dùng đã cấp quyền.
 
+### Template Workflow
+
+Trong **Template → Workflow**, chọn **Tạo template**, nhập tên/mô tả và chọn
+**Trống** hoặc một mẫu có sẵn để sao chép. Template mới mở trong canvas để chỉnh
+các bước/kết nối và lưu lại. Mẫu riêng xuất hiện khi tạo workflow trong project
+và trong mục **Tải mẫu workflow** của canvas; sửa mẫu không đổi workflow đã tạo.
+
 ### Orchestrator trong project
 
 1. Thêm AI Team/agents vào project; cần một agent điều phối và ít nhất một agent thực hiện.
-2. Chọn **Tạo Orchestrator**, chọn agent điều phối và nhập instruction, ví dụ:
+2. Chọn **Tạo mới → Orchestrator**, rồi chọn **Tự nhập tay** hoặc **Từ template**.
+   Khi nhập tay, chọn agent điều phối và nhập instruction, ví dụ:
    “BA phân tích → Planner lập kế hoạch → Developer triển khai → Tester kiểm thử;
    nếu FAIL giao Developer sửa rồi kiểm thử lại; nếu PASS tổng kết bàn giao.”
 3. Bấm **Lưu & xuất bản**, tạo ticket và bắt đầu chạy. Agent điều phối tự chọn
@@ -161,6 +169,23 @@ phối, hệ thống hỏi người dùng trước khi tiếp tục (cấu hình
 Khi chọn FINISH, Orchestrator tổng kết và hoàn tất ticket. Commit/push vẫn dùng
 thao tác phát hành có xác nhận hiện có. Chỉnh instruction/agent điều phối tạo
 phiên bản mới; ticket cũ giữ nguyên phiên bản đã lưu.
+
+Trong **Template → Orchestrator**, quản trị viên có thể tạo và sửa template gồm
+instruction, agent điều phối, thành viên, nhiệm vụ và file Markdown đầu ra.
+Agent điều phối và từng thành viên được chọn bằng combo box từ danh sách agent
+đang hoạt động; vai trò/handle được lấy tự động theo agent đã chọn.
+Template **Add new feature** có sẵn dùng `@leader` điều phối
+`@ba → @planner → @designer` (chỉ khi cần màn hình mới) `→ @developer → @tester`.
+Tester báo FAIL thì quay lại Developer; PASS thì FINISH. Tài liệu được lưu trong
+`docs/tickets/<ticket-id>/`: `requirements.md`, `implementation-plan.md`,
+`design.md` (nếu có), `test-report.md`.
+
+Khi tạo từ template, agent được ghép theo vai trò/handle trong chính project;
+thiếu agent hoặc không xác định được duy nhất thì cần bổ sung/chỉnh thành viên.
+Instruction có thể chỉnh trước khi xuất bản. Template được sao chép vào cấu hình
+Orchestrator; sửa template không thay đổi Orchestrator hoặc ticket hiện có.
+Leader có thể chọn `ASK_USER`; thành viên có thể trả `@@ASK_USER: <câu hỏi>` để
+tạm dừng, thông báo người tạo ticket và chờ trả lời ngay trong chat trước khi tiếp tục.
 
 ## 🛡️ Kiến trúc và bảo mật
 

@@ -9,7 +9,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 
 from app.acp.types import AgentRuntimeConfig
-from app.engine.nodes import make_node
+from app.engine.nodes import gate, make_node
 from app.engine.state import WorkflowState
 from app.schemas.workflow import Graph, Node
 
@@ -20,7 +20,11 @@ def parse_decision(text: str, workers: Mapping[str, Any]) -> tuple[str, str]:
     if not isinstance(payload, dict):
         raise ValueError("Agent điều phối cần trả JSON next_worker/task_instruction")
     target, instruction = payload.get("next_worker"), payload.get("task_instruction")
-    if target not in {*workers, "FINISH"} or not isinstance(instruction, str) or not instruction.strip():
+    if (
+        target not in {*workers, "FINISH", "ASK_USER"}
+        or not isinstance(instruction, str)
+        or not instruction.strip()
+    ):
         raise ValueError("Agent điều phối chọn agent/nhiệm vụ không hợp lệ")
     return target, instruction[:20000]
 
@@ -47,8 +51,10 @@ def compile_orchestrator(graph: Graph, agents: dict[str, AgentRuntimeConfig], ch
             "Chọn agent thực hiện dựa trên instruction và kết quả. "
             "Sau mỗi agent, đánh giá và giao bước tiếp. Nếu cần sửa lỗi hãy giao lại agent "
             "phù hợp; chỉ FINISH khi đã đáp ứng yêu cầu. Không tự commit/push. "
+            "Nếu cần thông tin hoặc xác nhận từ người tạo ticket, chọn ASK_USER và ghi câu hỏi "
+            "trong task_instruction. Phải chờ trả lời trước khi tiếp tục. "
             "Chỉ trả một JSON object, không kèm giải thích: "
-            '{"next_worker":"worker_0 hoặc FINISH",'
+            '{"next_worker":"worker_0 hoặc FINISH hoặc ASK_USER",'
             '"task_instruction":"chỉ thị cụ thể hoặc tổng kết bàn giao"}. '
             f"Chỉ dùng ID trong danh sách:\n{roster}\nArtifacts mới nhất:\n"
             + json.dumps(latest, ensure_ascii=False)
@@ -60,7 +66,13 @@ def compile_orchestrator(graph: Graph, agents: dict[str, AgentRuntimeConfig], ch
         result["orchestrator_task"] = instruction
         result["last_route"] = state.get("last_route", {}) | {"coordinator": target}
         ctx = config["configurable"]["ctx"]
-        recipient = "Hoàn tất" if target == "FINISH" else agents[str(workers[target].data["agent_id"])].handle
+        recipient = (
+            "Hoàn tất"
+            if target == "FINISH"
+            else "Người tạo ticket"
+            if target == "ASK_USER"
+            else agents[str(workers[target].data["agent_id"])].handle
+        )
         await ctx.emit(
             "log",
             f"Orchestrator → {recipient}: {instruction}",
@@ -69,19 +81,52 @@ def compile_orchestrator(graph: Graph, agents: dict[str, AgentRuntimeConfig], ch
         )
         if target == "FINISH":
             result["orchestrator_summary"] = instruction
+        elif target == "ASK_USER":
+            result["orchestrator_question"] = instruction
+            result["orchestrator_resume"] = "coordinator"
         return result
+
+    async def ask_user(state: WorkflowState, config: RunnableConfig) -> dict[str, Any]:
+        ctx = config["configurable"]["ctx"]
+        answer, counts = await gate(
+            state,
+            ctx,
+            "orchestrator_input",
+            "human_input",
+            {
+                "question": state["orchestrator_question"],
+                "prompt_hint": "Chờ người tạo ticket xác nhận hoặc bổ sung thông tin.",
+            },
+        )
+        return {
+            "gate_counts": counts,
+            "user_inputs": [
+                {
+                    "node_id": "orchestrator_input",
+                    "kind": "answer",
+                    "text": answer.get("text", ""),
+                    "user": answer["user"],
+                }
+            ],
+        }
 
     builder = StateGraph(WorkflowState)
     for node in graph.nodes:
         if node.id in {"start", "end"}:
             builder.add_node(node.id, make_node(node, agents))
     builder.add_node("coordinator", coordinate)
+    builder.add_node("orchestrator_input", ask_user)
+    builder.add_conditional_edges(
+        "orchestrator_input",
+        lambda state: state["orchestrator_resume"],
+        {"coordinator": "coordinator", **{nid: nid for nid in workers}},
+    )
     # Persist the route in state: error/retry updates must retain the pending worker.
     # Command-only destinations disappear when the runner updates checkpoint.error.
     builder.add_conditional_edges(
         "coordinator",
         lambda state: state["last_route"]["coordinator"],
-        {**{nid: nid for nid in workers}, "FINISH": "end"},
+        {**{nid: nid for nid in workers}, "FINISH": "end", "ASK_USER": "orchestrator_input"},
     )
     builder.add_edge(START, "start")
     builder.add_edge("start", "coordinator")
@@ -99,11 +144,29 @@ def compile_orchestrator(graph: Graph, agents: dict[str, AgentRuntimeConfig], ch
             assigned.data["instructions"] = (
                 f"Instruction chung:\n{settings.instructions}\n\n"
                 f"Nhiệm vụ từ Orchestrator:\n{state.get('orchestrator_task', '')}\n"
+                f"Hướng dẫn vai trò:\n{node.data.get('instructions', '')}\n"
                 "Báo cáo kết quả và bằng chứng thực tế cho Orchestrator. Không tự commit/push."
+                " Nếu cần thông tin hoặc xác nhận từ người tạo ticket, chỉ trả lời bắt đầu bằng "
+                "@@ASK_USER: rồi ghi câu hỏi; hệ thống sẽ dừng chờ người tạo ticket trả lời."
                 f"\nArtifacts mới nhất:\n{json.dumps(latest, ensure_ascii=False)}"
             )
-            return await make_node(assigned, agents)(state, config)
+            result = await make_node(assigned, agents)(state, config)
+            text = result["outputs"][-1]["text"].strip()
+            if text.startswith("@@ASK_USER:"):
+                question = text.removeprefix("@@ASK_USER:").strip()
+                if not question:
+                    raise ValueError("Agent cần nêu câu hỏi cho người tạo ticket")
+                result["orchestrator_question"] = question
+                result["orchestrator_resume"] = node.id
+                result["last_route"] = result.get("last_route", {}) | {node.id: "ASK_USER"}
+            else:
+                result["last_route"] = result.get("last_route", {}) | {node.id: "coordinator"}
+            return result
 
         builder.add_node(nid, execute)
-        builder.add_edge(nid, "coordinator")
+        builder.add_conditional_edges(
+            nid,
+            lambda state, key=nid: state["last_route"][key],
+            {"ASK_USER": "orchestrator_input", "coordinator": "coordinator"},
+        )
     return builder.compile(checkpointer=checkpointer)
